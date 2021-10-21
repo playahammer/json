@@ -888,8 +888,7 @@ json_obj_free(struct json_obj *obj)
       while (next) {
             struct json_obj *p = next->next_key;
 
-            switch (next->value->value_type)
-            {
+            switch (next->value->value_type) {
                   case V_OBJECT:
                   case V_ARRAY:
                         json_obj_free(obj->value);
@@ -1186,29 +1185,28 @@ json_build_dispatch(struct json_obj *obj, char *json_content, uint32_t size, uin
 {
       if (!obj) return (0);
       
-      switch (obj->value_type)
-      {
-      case V_NUMBER:
-      case V_BOOL:
-      case V_NULL:
-            strncpy(json_content + built_size, obj->data, strlen(obj->data));
-            built_size += strlen(obj->data);
-            break;
-      case V_STRING:
-            built_size = json_build_string(obj->data, json_content, size, built_size);
-            break;
-      case V_OBJECT:
-            *(json_content + built_size++) = '{';
-            built_size = json_build_object(obj->next_key, json_content, size, built_size, beautfy, tab_size, layer + 1);
-            break;
-      case V_ARRAY:
-            *(json_content + built_size++) = '[';
-            built_size = json_build_array(obj->next_key, json_content, size, built_size, beautfy, tab_size, layer + 1);
-            break;
-      default:
-            fprintf(stdout, "[JSON Build Error] \n");
-            return (0);
-            break;
+      switch (obj->value_type) {
+            case V_NUMBER:
+            case V_BOOL:
+            case V_NULL:
+                  strncpy(json_content + built_size, obj->data, strlen(obj->data));
+                  built_size += strlen(obj->data);
+                  break;
+            case V_STRING:
+                  built_size = json_build_string(obj->data, json_content, size, built_size);
+                  break;
+            case V_OBJECT:
+                  *(json_content + built_size++) = '{';
+                  built_size = json_build_object(obj->next_key, json_content, size, built_size, beautfy, tab_size, layer + 1);
+                  break;
+            case V_ARRAY:
+                  *(json_content + built_size++) = '[';
+                  built_size = json_build_array(obj->next_key, json_content, size, built_size, beautfy, tab_size, layer + 1);
+                  break;
+            default:
+                  fprintf(stdout, "[JSON Build Error] \n");
+                  return (0);
+                  break;
       }
       return (built_size);
 }

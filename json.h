@@ -94,7 +94,7 @@ static struct json_tracker *json_tracker_init(char *json_content);
 static void json_tracker_print(struct json_tracker *tracker, uint32_t line, uint32_t col);
 static void json_tracker_free(struct json_tracker *tracker);
 
-/* Serializate */
+/* Serialize */
 /* Export JSON APIs for customs user */
 struct json_obj* from_json(char *json_content);
 void json_obj_free(struct json_obj *obj);
@@ -117,7 +117,7 @@ char *json_get_string(struct json_obj *obj, char *err_msg);
 #define IS_NULL 1
 int json_get_null(struct json_obj *obj, char *err_msg);
 
-/* Deserializate */
+/* Deserialize */
 int to_json(struct json_obj *root, char *json_content, uint32_t size);
 static int json_build(struct json_obj *obj, char *json_content, uint32_t size, bool beautfy, int tab_size);
 static int json_build_object(struct json_obj *obj, char *json_content, uint32_t size, uint32_t built_size, bool beautfy, int tab_size, int layer);
