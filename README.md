@@ -3,12 +3,22 @@ This project is a very tiny JSON parser and generator for C.
 
 ## APIs
 ### Base
+#### Serialize
 ```c
 struct json_obj* from_json(char *json_content);
 ```
 Loading JSON content, and then parsing into a JSON tree for querying, modifying or deserializing.
 
 Return **NULL** if the input is invalid.
+#### Deserialize
+```c
+int to_json(struct json_obj *root, char *json_content, uint32_t size);
+```
+Deserialize a JSON tree into JSON text.
+
+Return **0** if dealing successfully, otherwise failed.
+#### Operations
+##### Query
 ```c
 struct json_obj *json_query(char *command, struct json_obj *obj);
 ```
@@ -26,13 +36,22 @@ char *json_get_string(struct json_obj *obj, char *err_msg);
 int json_get_null(struct json_obj *obj, char *err_msg);
 ```
 Above five functions to get value in the appointed type. Error will pass through ```err_msg``` if ```err_msg``` is not NULL when error occurs.
-
+##### Update
 ```c
-int to_json(struct json_obj *root, char *json_content, uint32_t size);
+int json_update(char *command, struct json_obj *obj, struct json_obj *value);
 ```
-Deserialize a JSON tree into JSON text.
+Update the ```value``` of ```command``` in ```obj``` tree. if the key is not found, return ```1``` with error printing.
 
-Return **0** if dealing successfully, otherwise failed.
+##### Add
+```c
+int json_add(char *command, struct json_obj *obj, struct json_obj *value);
+```
+Add new key and its ```value```. Let's see an example: this is a JSON text  ```{"1":{}}```, and the command is ```1.1``` with its value ```[1,2,3]```. It will work out such result ```{"1":{"1":{"1":[1,2,3]}}}``` since  there is no specific key symbol to differ object and array in command parser, they both use ```.``` operator to finish every operation. By default, we create an object instead of array when meets digital key.
+##### Delete
+```c
+int json_delete(char *command, struct json_obj *obj);
+```
+Delete the key from ```obj``` including its value. In array, deleting a key will remap remainig keys, but don't do that in object, even all the key are digital.
 ### Utils
 ```c
 int json_utils_beautify(char *input, char *output, int tab_size);
@@ -58,7 +77,7 @@ Beautfy:
   ]
 }
 Minify:
-{"1":"hellworl","3":[1,2,3],"5":[{"1":2}]}
+{"1":"helloworld","3":[1,2,3],"5":[{"1":2}]}
 ```
 ### Wrappers
 ```c
@@ -76,10 +95,10 @@ The micro definitions will help build a JSON tree more easily. Notice that every
 ## TODO
 
 * [ ] Fully UTF-8 support
-* [ ] Add ```add``` and ```delete``` apis in JSON tree
+* [x] Add ```add``` and ```delete``` apis in JSON tree
 * [ ] Make it more faster?
 * [ ] Introduce other JSON extensions
-* [ ] More effciently error tips
+* [ ] More effcient error tips
 
 ## Example
 ```c

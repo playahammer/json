@@ -106,6 +106,7 @@ static struct json_token *json_lexer(char *json_content, struct json_tracker *tr
 static struct json_obj *json_parser(struct json_token *head, struct json_tracker *tracker);
 static void json_token_free(struct json_token *token);
 
+/* Operations */
 /* Query */
 struct json_obj *json_query(char *command, struct json_obj *obj);
 static struct json_query_command *json_query_command_parser(char *json_query_command);
@@ -116,7 +117,12 @@ bool json_get_bool(struct json_obj *obj, char *err_msg);
 char *json_get_string(struct json_obj *obj, char *err_msg);
 #define IS_NULL 1
 int json_get_null(struct json_obj *obj, char *err_msg);
-
+/* Modify */
+int json_update(char *command, struct json_obj *obj, struct json_obj *value);
+/* Add */
+int json_add(char *command, struct json_obj *obj, struct json_obj *value);
+/* Delete */
+int json_delete(char *command, struct json_obj *obj);
 /* Deserialize */
 int to_json(struct json_obj *root, char *json_content, uint32_t size);
 static int json_build(struct json_obj *obj, char *json_content, uint32_t size, bool beautfy, int tab_size);

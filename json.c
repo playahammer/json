@@ -109,7 +109,7 @@ json_tracker_free(struct json_tracker *tracker)
             free(t);
             t = p; 
       }
-      
+      free(tracker);
 }
 
 struct json_token*
@@ -859,8 +859,8 @@ json_query_command_free(struct json_query_command *commands)
             free(c);
             c = p;
       }
-      
-      free(commands);   
+      if (commands->command_words) free(commands->command_words);
+      free(commands); 
 }
 struct json_obj* 
 from_json(char *json_content)
@@ -906,6 +906,7 @@ json_obj_free(struct json_obj *obj)
             free(next);
             next = p; 
       }
+      if (obj->data) free(obj->data);
       free(obj);
 }
 
@@ -922,7 +923,7 @@ json_query(char *command, struct json_obj *obj)
       if (!cmd) return (NULL);
 
       /* Execute querying */
-      while (cmd) {
+      while (cmd && obj) {
             /* The obj is object or array of head */
             struct json_obj *o = NULL, *r = NULL;
             for (o = obj->next_key; o; o = o->next_key) {
@@ -941,6 +942,10 @@ json_query(char *command, struct json_obj *obj)
                   cmd = cmd->next_cmd;
       }
       json_query_command_free(cmd);
+
+      if (!obj) {
+            fprintf(stderr, "[JSON Query Error] Not found the key: %s\n", cmd->command_words);
+      }
       return (obj);
 }
 
@@ -1014,6 +1019,161 @@ int json_get_null(struct json_obj *obj, char *err_msg)
             }
       }
       return (1);
+}
+
+/** 
+ *  Modify the value of corresponding key
+*/
+int 
+json_update(char *command, struct json_obj *obj, struct json_obj *value)
+{
+      if (!obj) return (1);
+      struct json_query_command *cmd = json_query_command_parser(command);
+      struct json_query_command *c = cmd->next_cmd;
+      if (!c) return (1);
+
+      /* Execute searching */
+      while (c && obj) {
+            /* The obj is object or array of head */
+            struct json_obj *o = NULL, *r = NULL;
+            for (o = obj->next_key; o; o = o->next_key) {
+                  if (!strncmp(o->data, c->command_words, strlen(c->command_words))) {
+                        goto next;
+                  }
+            }
+            /* Not found the key */
+            if (!o) {
+                  fprintf(stderr, "[JSON Update Error] Not found the key: %s\n", c->command_words);
+                  json_query_command_free(cmd);
+                  return (1);
+            }
+            next:
+                  if (c->next_cmd)
+                        obj = o->value;
+                  else obj = o;
+                  c = c->next_cmd;
+      }
+
+      json_query_command_free(cmd);
+      if (obj) {
+            json_obj_free(obj->value);
+            obj->value = value;
+      }
+      else {
+            fprintf(stderr, "[JSON Update Error] Not found the key: %s\n", c->command_words);
+            return (1);
+      }
+      return (0);
+}
+
+/**
+ * Add a new key and its value.
+ * */
+int 
+json_add(char *command, struct json_obj *obj, struct json_obj *value)
+{
+      struct json_query_command *cmd = json_query_command_parser(command);
+      cmd = cmd->next_cmd;
+      if (!cmd || !obj) return (1);
+
+      /* Execute searching */
+      while (cmd) {
+            /* The obj is object or array of head */
+            struct json_obj *o = NULL;
+            for (o = obj->next_key; o; o = o->next_key) {
+                  if (!strncmp(o->data, cmd->command_words, strlen(cmd->command_words))) {
+                        goto next;
+                  }
+            }
+            /* Not found the key, create it */
+            if (!o) {
+                  o = calloc(1, sizeof(struct json_obj));
+                  o->data = calloc(cmd->len, sizeof(char));
+                  strncpy(o->data, cmd->command_words, cmd->len);
+                  o->value_type = V_STRING;
+                  o->key_value = true;
+                  if (!obj->next_key) {
+                        obj->next_key = o;
+                        o->prev_key = obj;
+                  }
+                  else {
+                        struct json_obj *p = obj->next_key;
+                        obj->next_key = o;
+                        o->prev_key = obj;
+                        o->next_key = p;
+                        p->prev_key = o;
+                  }
+
+                  // Create a new node
+                  if (cmd->next_cmd) {
+                        o->value = calloc(1, sizeof(struct json_obj));
+                        o->value->value_type = V_OBJECT;
+                        o->value->key_value = true;
+                  }
+            }
+            else {
+                  if (o->value)
+                        json_obj_free(o->value);
+                  o->value = value;
+            }
+            next:
+                  if (cmd->next_cmd)
+                        obj = o->value;
+                  else obj = o;
+                  cmd = cmd->next_cmd;
+      }
+      /* If the value is not NULL, update it but free it fisrt */
+      if (obj->value) free(obj->value);
+      obj->value = value;
+      json_query_command_free(cmd);
+      return (0);
+}
+
+/**
+ *  Delete key and its value in given command. If not found, throw error.
+ */
+int 
+json_delete(char *command, struct json_obj *obj)
+{
+      struct json_query_command *cmd = json_query_command_parser(command);
+      cmd = cmd->next_cmd;
+      if (!cmd) return (1);
+
+      /* Execute seaching */
+      while (cmd && obj) {
+            /* The obj is object or array of head */
+            struct json_obj *o = NULL, *r = NULL;
+            for (o = obj->next_key; o; o = o->next_key) {
+                  if (!strncmp(o->data, cmd->command_words, strlen(cmd->command_words))) {
+                        goto next;
+                  }
+            }
+            /* Not found the key */
+            if (!o) {
+                  fprintf(stderr, "[JSON Delete Error] Not found the key: %s\n", cmd->command_words);
+                  json_query_command_free(cmd);
+                  return (1);
+            }
+            next:
+                  if (cmd->next_cmd)
+                        obj = o->value;
+                  else obj = o;
+                  cmd = cmd->next_cmd;
+      }
+      json_query_command_free(cmd);
+
+      
+      if (!obj) {
+            fprintf(stderr, "[JSON Delete Error] Not found the key: %s\n", cmd->command_words);
+      }else {
+            if (obj->next_key) 
+                  obj->next_key->prev_key = obj->prev_key;
+            obj->prev_key->next_key = obj->next_key;
+            json_obj_free(obj->value);
+            free(obj->data);
+            free(obj);
+      }
+      return (0);
 }
 
 int 
