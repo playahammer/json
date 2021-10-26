@@ -61,7 +61,7 @@ struct json_obj {
 struct json_query_command{
       /* Length of command words */
       uint32_t len;
-      /* A command line splited words */
+      /* The command words which the command line is splited to */
       char *command_words;
       /* Next command */
       struct json_query_command *next_cmd;
@@ -81,7 +81,7 @@ struct json_tracker {
 
 /* Error packet for helping print error */
 struct json_error_pkt {
-      /* The error occur of col and row */
+      /* The col and row where the error occurred */
       uint32_t col;
       uint32_t row;
       /* Error message */
@@ -89,13 +89,13 @@ struct json_error_pkt {
       /* Avoid to write error again */
       bool error_occur;
 };
-
+/* Error information functions */
 static struct json_tracker *json_tracker_init(char *json_content);
 static void json_tracker_print(struct json_tracker *tracker, uint32_t line, uint32_t col);
 static void json_tracker_free(struct json_tracker *tracker);
 
 /* Serialize */
-/* Export JSON APIs for customs user */
+/* Export JSON APIs for user */
 struct json_obj* from_json(char *json_content);
 void json_obj_free(struct json_obj *obj);
 /* Internal functions */
@@ -103,6 +103,8 @@ static struct json_token *json_parse_object(struct json_token *token, struct jso
 static struct json_token *json_parse_array(struct json_token *token, struct json_obj *obj, bool can_end, struct json_error_pkt *e_pkt);
 static struct json_token *json_parse_dispatch(struct json_token *token, struct json_obj *obj, struct json_error_pkt *e_pkt);
 static struct json_token *json_lexer(char *json_content, struct json_tracker *tracker);
+static struct json_token *json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len);
+static struct json_token *json_string_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len, struct json_tracker *tracker);
 static struct json_obj *json_parser(struct json_token *head, struct json_tracker *tracker);
 static void json_token_free(struct json_token *token);
 
@@ -148,7 +150,7 @@ static size_t json_utils_console_wstrlen(char *s, int encoding, size_t slen);
 struct json_obj *load_single_value(char *str, int value_type);
 struct json_obj *load_object(struct json_obj* args, ...);
 struct json_obj *load_array(struct json_obj* args, ...);
-/* Mutilvalue wrapper */
+/* Multivalue wrapper */
 #define LOAD_OBJECT(...) load_object(__VA_ARGS__)
 #define LOAD_ARRAY(...) load_array(__VA_ARGS__)
 /* Single value wrapper */
