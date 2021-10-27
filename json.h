@@ -17,7 +17,7 @@ struct json_token {
       #define RIGHT_BUCKET    0x01 // }
       #define STRING          0x02 // "abc"
       #define BOOLEAN         0x03 // true, false
-      #define NUMBER          0x04 // 123, -123, 1.234
+      #define NUMBER          0x04 // 123, -123, 1.234, 1e+10
       #define NULL_OBJ        0x05 // null
       #define LEFT_S_BUCKET   0x06 // [
       #define RIGHT_S_BUCKET  0x07 // ]
@@ -27,7 +27,7 @@ struct json_token {
       struct json_token *next_token;
 };
 
-/* The minimum length of a JSON file is 2, a pair of bucket like '{}' */
+/* The minimum length of a JSON file is 2, a pair of bucket like '{}' or '[]' */
 #define MIN_JSON_LEN 2
 
 struct json_obj {

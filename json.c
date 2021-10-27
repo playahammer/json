@@ -990,8 +990,107 @@ json_get_double(struct json_obj *obj, char *err_msg)
             }
             return (f);        
       }
-      f = strtod(obj->data, NULL);
-      return (f);
+      int sign = 1, exp_sign = 1, i = 0; /* 1 is positive, -1 is negative */
+      char integer_part[BUFSIZ], fractional_part[BUFSIZ], exponent_part[BUFSIZ];
+      bzero(integer_part, BUFSIZ);
+      bzero(fractional_part, BUFSIZ);
+      bzero(exponent_part, BUFSIZ);
+
+      if (obj->data[i] == '+') {
+            sign = 1;
+            i++;
+      }
+      else if (obj->data[i] == '-') {
+            sign = -1;
+            i++;
+      }
+
+      for (size_t j = 0; obj->data[i] != '.' && i < strlen(obj->data); j++, i++) {
+            integer_part[j] = obj->data[i];
+      }
+      /* Like 123 */
+      if (i ==  strlen(obj->data)) {
+            goto integer_exit;
+      }
+      /* Skip dot */
+      i++;
+      /* Copy */
+      for (size_t j = 0; obj->data[i] != 'e' && obj->data[i] != 'E' && i < strlen(obj->data); j++, i++) {
+            fractional_part[j] = obj->data[i];
+      }
+
+      /* Like 123.123, but we only get integer part */
+      if (i == strlen(obj->data)) {
+            goto integer_exit;
+      }
+
+      i++;
+      if (obj->data[i] == '+') {
+            exp_sign = 1;
+            i++;
+      }
+      else if (obj->data[i] == '-') {
+            exp_sign = -1;
+            i++;
+      }
+
+      for (size_t j = 0; i < strlen(obj->data); i++, j++) {
+            exponent_part[j] = obj->data[i];
+      }
+
+      long exp = atol(exponent_part);
+      /* Like 23.45e+15 */
+      if (exp_sign > 0) {
+            int j = 0, i = strlen(integer_part);
+            for (; j < exp && j < strlen(fractional_part); i++, j++) {
+                  integer_part[i] = fractional_part[j]; 
+            }
+
+            if (j < exp) {
+                  for (; j < exp; j++, i++) {
+                        integer_part[i] = '0';
+                  }
+            }
+            else if (j < strlen(fractional_part)) {
+                  integer_part[i++] = '.';
+                  for (; j < strlen(fractional_part); j++, i++) {
+                        integer_part[i] = fractional_part[j];
+                  }
+                  
+            }
+            return (atof(integer_part));
+      }
+      /* Like 1.1e-1 */
+      else {
+            char new_value[BUFSIZ] = {0};
+            int i = 0, j = 0;
+            if (exp < strlen(integer_part)) {
+                  for (; i < strlen(integer_part) - exp; i++, j++) {
+                        new_value[i] = integer_part[j];
+                  }
+                  new_value[i++] = '.';
+            }
+            else {
+                  new_value[i++] = '0';
+                  new_value[i++] = '.';
+                  for (; i < exp - strlen(integer_part) + 2; i++) {
+                        new_value[i] = '0';
+                  }
+            }
+            for (; j < strlen(integer_part); j++, i++) {
+                  new_value[i] = integer_part[j];
+            }
+
+            for (j = 0; j < strlen(fractional_part); j++, i++) {
+                  new_value[i] = fractional_part[j];
+            } 
+            f = atof(new_value);
+            return (f);
+
+      }
+      integer_exit:
+            f = atof(integer_part);
+            return (f);
 }
 
 long 
@@ -1005,8 +1104,80 @@ json_get_long(struct json_obj *obj, char *err_msg)
             }
             return (l);        
       }
-      l = atol(obj->data);
-      return (l);
+      int sign = 1, exp_sign = 1, i = 0; /* 1 is positive, -1 is negative */
+      char integer_part[BUFSIZ], fractional_part[BUFSIZ], exponent_part[BUFSIZ];
+      bzero(integer_part, BUFSIZ);
+      bzero(fractional_part, BUFSIZ);
+      bzero(exponent_part, BUFSIZ);
+
+      if (obj->data[i] == '+') {
+            sign = 1;
+            i++;
+      }
+      else if (obj->data[i] == '-') {
+            sign = -1;
+            i++;
+      }
+
+      for (size_t j = 0; obj->data[i] != '.' && i < strlen(obj->data); j++, i++) {
+            integer_part[j] = obj->data[i];
+      }
+      /* Like 123 */
+      if (i ==  strlen(obj->data)) {
+            goto integer_exit;
+      }
+      /* Skip dot */
+      i++;
+      /* Copy */
+      for (size_t j = 0; obj->data[i] != 'e' && obj->data[i] != 'E' && i < strlen(obj->data); j++, i++) {
+            fractional_part[j] = obj->data[i];
+      }
+
+      /* Like 123.123, but we only get integer part */
+      if (i == strlen(obj->data)) {
+            goto integer_exit;
+      }
+
+      i++;
+      if (obj->data[i] == '+') {
+            exp_sign = 1;
+            i++;
+      }
+      else if (obj->data[i] == '-') {
+            exp_sign = -1;
+            i++;
+      }
+
+      for (size_t j = 0; i < strlen(obj->data); i++, j++) {
+            exponent_part[j] = obj->data[i];
+      }
+
+      long exp = atol(exponent_part);
+      l = atol(integer_part);
+      /* Like 23.45e+15 */
+      if (exp_sign > 0) {
+            for (long i = exp; i; i--) {
+                  l *= 10;
+            }
+            char *frac = calloc(exp, sizeof(char));
+            memset(frac, '0', exp);
+            /* The value of exp may bigger than strlen(fractional_part) */
+            strncpy(frac, fractional_part, exp > strlen(fractional_part) ? strlen(fractional_part) : exp);
+            l += atol(frac); 
+            free(frac);
+            return (l);
+      }
+      /* Like 1.1e-1, its decimalism is 0.11, and part of integer is zero */
+      else {
+            for (long i = exp; i; i--) {
+                  l /= 10;
+            }
+            return (l);
+
+      }
+      integer_exit:
+            l = atol(integer_part);
+            return (l);
 }
 
 bool 
