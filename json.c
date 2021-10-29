@@ -112,6 +112,9 @@ json_tracker_free(struct json_tracker *tracker)
       free(tracker);
 }
 
+/**
+ *  Turn json content of input into tokens.
+*/
 struct json_token*
 json_lexer(char *json_content, struct json_tracker *tracker)
 {
@@ -264,6 +267,7 @@ json_lexer(char *json_content, struct json_tracker *tracker)
                         break;
                   case '+':
                   case '-':
+                  case '0':
                   case '1':
                   case '2':
                   case '3':
@@ -301,6 +305,16 @@ json_lexer(char *json_content, struct json_tracker *tracker)
       return (head);
 }
 
+/**
+ * Number := DecimalNumber | HexNumber
+ * DecimalNumber := DecimalInteger [FractionalPart] [ExponentPart]
+ * DecimalInteger := [+|-] DecimalDigits
+ * DecimalDigits := [0-9]+
+ * FractionalPart := "." DecimalDigits
+ * ExponentPart := (E|e) DecimalInteger
+ * HexNumber := ("0x"|"0X") DecimalDigits
+ * 
+*/
 static struct json_token *
 json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len)
 {
@@ -308,6 +322,15 @@ json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *j
       /* Store col value */
       int num_col = *col;
       uint32_t j = *i;
+      /* Hexadecimal number */
+      if (json_content[*i] == '0' && (json_content[*i + 1] == 'x' || json_content[*i + 1] == 'X')) {
+            for((*i) += 2, (*col) += 2; *i < len && ishexnumber(json_content[*i]); (*i)++, (*col)++);
+            /* At least it must have one decimal digit */
+            if (j + 2 == *i) return (number_token);
+            goto number_exit;
+      }
+
+      /* Decimal number */
       if (json_content[*i] == '+' || json_content[*i] == '-') (*i)++, (*col)++;
       /* Integer part */
       /* Number at least has one digit */
@@ -317,6 +340,10 @@ json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *j
       for (; *i < len && isdigit(json_content[*i]); (*i)++, (*col)++);
       /* Fractional part */
       if (json_content[*i] == '.') {
+            /* Fractional part must have one digit */
+            if (!isdigit(json_content[*i + 1])) {
+                  return (number_token);
+            }
             for ((*i)++, (*col)++; *i < len && isdigit(json_content[*i]); (*i)++, (*col)++);
 
       } 
@@ -324,22 +351,23 @@ json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *j
       if (json_content[*i] == 'E' || json_content[*i] == 'e') {
             (*i)++, (*col)++;
             if (json_content[*i] == '+' || json_content[*i] == '-') (*i)++, (*col)++;
-            /* Must have digital numbers */
+            /* Must have one digital */
             if (!isdigit(json_content[*i])) {
                   return (number_token);
             }
             for (; *i < len && isdigit(json_content[*i]); (*i)++, (*col)++);
       }
       
-      number_token = calloc(1, sizeof(struct json_token));
-      number_token->token_len = *i - j;
-      number_token->token_type = NUMBER;
-      number_token->token_words = calloc(*i - j + 1, sizeof(char));
-      number_token->col = num_col;
-      number_token->row = row;
-      strncpy(number_token->token_words, json_content + j, *i - j);
-      token->next_token = number_token;
-      return (number_token);
+      number_exit:
+            number_token = calloc(1, sizeof(struct json_token));
+            number_token->token_len = *i - j;
+            number_token->token_type = NUMBER;
+            number_token->token_words = calloc(*i - j + 1, sizeof(char));
+            number_token->col = num_col;
+            number_token->row = row;
+            strncpy(number_token->token_words, json_content + j, *i - j);
+            token->next_token = number_token;
+            return (number_token);
 }
 
 static struct json_token *
@@ -986,7 +1014,7 @@ json_get_double(struct json_obj *obj, char *err_msg)
       
       if (!obj) {
             if (err_msg) {
-                  sprintf(err_msg, "Null pointer\n");           
+                  sprintf(err_msg, "Null pointer");           
             }
             return (f);        
       }
@@ -996,6 +1024,11 @@ json_get_double(struct json_obj *obj, char *err_msg)
       bzero(fractional_part, BUFSIZ);
       bzero(exponent_part, BUFSIZ);
 
+      /* Hexadecimal number */
+      if (obj->data[i] == '0' || (obj->data[i + 1] == 'x' || obj->data[i + 1] == 'X')) {
+            return (json_get_long(obj, err_msg));
+      }
+      /* Decimal number */
       if (obj->data[i] == '+') {
             sign = 1;
             i++;
@@ -1100,7 +1133,7 @@ json_get_long(struct json_obj *obj, char *err_msg)
       
       if (!obj) {
             if (err_msg) {
-                  sprintf(err_msg, "Null pointer\n");           
+                  sprintf(err_msg, "Null pointer");           
             }
             return (l);        
       }
@@ -1109,6 +1142,29 @@ json_get_long(struct json_obj *obj, char *err_msg)
       bzero(integer_part, BUFSIZ);
       bzero(fractional_part, BUFSIZ);
       bzero(exponent_part, BUFSIZ);
+
+      /* Hexadecimal number */
+      if (obj->data[i] == '0' || (obj->data[i + 1] == 'x' || obj->data[i + 1] == 'X')) {
+            i = i + 2;
+            for (; i < strlen(obj->data); i++) {
+                  if (isdigit(obj->data[i])) {
+                        l = l * 16 + obj->data[i] - '0';
+                  }
+                  else if (obj->data[i] >= 'A' && obj->data[i] <= 'F') {
+                        l = l * 16 + obj->data[i] - 'A' + 10;
+                  }
+                  else if (obj->data[i] >= 'a' && obj->data[i] <= 'f') {
+                        l = l * 16 + obj->data[i] - 'a' + 10;
+                  }
+                  else {
+                        if (err_msg) {
+                              sprintf(err_msg, "Unexpected hexadecimal character: %c", obj->data[i]);
+                        }
+                        return (0);
+                  }
+            }
+            return (l);
+      }
 
       if (obj->data[i] == '+') {
             sign = 1;
@@ -1186,7 +1242,7 @@ json_get_bool(struct json_obj *obj, char *err_msg)
       if (!obj) return (false);
       if (obj->value_type != V_BOOL) {
             if (err_msg) {
-                  sprintf(err_msg, "Can not convert %s to Boolean\n", json_obj_type_strs[obj->value_type]);
+                  sprintf(err_msg, "Can not convert %s to Boolean", json_obj_type_strs[obj->value_type]);
                   return false;
             }
       }
@@ -1198,12 +1254,6 @@ char *
 json_get_string(struct json_obj *obj, char *err_msg)
 {
       if (!obj) return (NULL);
-      if (obj->value_type != V_STRING) {
-            if (err_msg) {
-                  sprintf(err_msg, "Can not convert %s to String\n", json_obj_type_strs[obj->value_type]);
-                  return (NULL);
-            }
-      }
 
       char *data = calloc(strlen(obj->data), sizeof(char));
       strncpy(data, obj->data, strlen(obj->data));
