@@ -23,6 +23,7 @@ struct json_token {
       #define RIGHT_S_BUCKET  0x07 // ]
       #define COLON           0x08 // :
       #define COMMA           0x09 // ,
+      #define COMMENT         0x10 // /
       uint8_t token_type;
       struct json_token *next_token;
 };
@@ -90,21 +91,22 @@ struct json_error_pkt {
       bool error_occur;
 };
 /* Error information functions */
-static struct json_tracker *json_tracker_init(char *json_content);
+static struct json_tracker *json_tracker_init(char *json_content, int size);
 static void json_tracker_print(struct json_tracker *tracker, uint32_t line, uint32_t col);
 static void json_tracker_free(struct json_tracker *tracker);
 
 /* Serialize */
 /* Export JSON APIs for user */
-struct json_obj* from_json(char *json_content);
+struct json_obj* from_json(char *json_content, int size);
 void json_obj_free(struct json_obj *obj);
 /* Internal functions */
 static struct json_token *json_parse_object(struct json_token *token, struct json_obj *obj, bool can_end, struct json_error_pkt *e_pkt);
 static struct json_token *json_parse_array(struct json_token *token, struct json_obj *obj, bool can_end, struct json_error_pkt *e_pkt);
 static struct json_token *json_parse_dispatch(struct json_token *token, struct json_obj *obj, struct json_error_pkt *e_pkt);
-static struct json_token *json_lexer(char *json_content, struct json_tracker *tracker);
+static struct json_token *json_lexer(char *json_content, const int size, struct json_tracker *tracker);
 static struct json_token *json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len);
 static struct json_token *json_string_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len, struct json_tracker *tracker);
+static int json_comments_skip(uint32_t *col, uint32_t *row, char *json_content, uint32_t *i, uint32_t len);
 static struct json_obj *json_parser(struct json_token *head, struct json_tracker *tracker);
 static void json_token_free(struct json_token *token);
 
@@ -162,4 +164,10 @@ struct json_obj *load_array(struct json_obj* args, ...);
 /* Terminator of array and object */
 #define LOAD_END NULL
 
+bool json_iterable(struct json_obj *obj);
+struct json_obj *json_next_key(struct json_obj *obj);
+struct json_obj *json_begin(struct json_obj *obj);
+#define json_end(obj)  (obj == NULL)
+struct json_obj *json_get_value(struct json_obj *obj);
+char *json_get_key(struct json_obj *obj);
 #endif // !_JSON_H_

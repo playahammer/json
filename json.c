@@ -40,19 +40,15 @@ static const char *json_obj_type_strs[] = {
 };
 
 static struct json_tracker* 
-json_tracker_init(char *json_content)
+json_tracker_init(char *json_content, int size)
 {
       struct json_tracker *tracker = calloc(1, sizeof(struct json_tracker)), *p;
       tracker->row = 0;
       p = tracker;
       size_t tracker_begin = 0, line = 1;
-
-      if (json_content[strlen(json_content) - 1] != '\n') {
-            json_content[strlen(json_content)] = '\n';
-      }
       
-      for (size_t i = 0; i < strlen(json_content); i++) {
-            if (json_content[i] == '\n') {
+      for (size_t i = 0; i <= size; i++) {
+            if (json_content[i] == '\n' || i == size) {
                   struct json_tracker *q = calloc(1, sizeof(struct json_tracker));
                   q->row = line++;
                   q->line = calloc(i - tracker_begin + 1, sizeof(char));
@@ -116,15 +112,14 @@ json_tracker_free(struct json_tracker *tracker)
  *  Turn json content of input into tokens.
 */
 struct json_token*
-json_lexer(char *json_content, struct json_tracker *tracker)
+json_lexer(char *json_content, const int size, struct json_tracker *tracker)
 {
       struct json_token *head = (struct json_token *)calloc(1, sizeof(struct json_token));
       struct json_token *p = head, *q;
       int i = 0, j = 0;
       uint32_t row = 1, col = 0;
-      const uint32_t json_len = strlen(json_content);
 
-      while (i < json_len) {
+      while (i < size) {
             bool token_bool = false;
             switch (json_content[i]) {
                   case '{':
@@ -203,13 +198,14 @@ json_lexer(char *json_content, struct json_tracker *tracker)
                         break;
                   case '"': /* String */
                         /* TODO: Support utf-8 encoding */
-                        p = json_string_lexer(p, &col, row, json_content, (uint32_t *)&i, json_len, tracker);
+                        p = json_string_lexer(p, &col, row, json_content, (uint32_t *)&i, size, tracker);
                         if (!p) {
                               json_token_free(head);
                               return (NULL);
                         }
                         break;
                   case '\n': /* Move to new line */
+                  case '\r':
                         row ++;
                         /* Reset col when turn into the new line */
                         col = -1; 
@@ -277,7 +273,7 @@ json_lexer(char *json_content, struct json_tracker *tracker)
                   case '7':
                   case '8':
                   case '9': /* Number including integer and float */
-                        p = json_number_lexer(p, &col, row, json_content, (uint32_t *)&i, json_len);
+                        p = json_number_lexer(p, &col, row, json_content, (uint32_t *)&i, size);
                         if (!p) {
                               json_tracker_print(tracker, row, col);
                               fprintf(stdout, "[JSON Lexer Error] Invalid number");
@@ -287,15 +283,26 @@ json_lexer(char *json_content, struct json_tracker *tracker)
                         i --;
                         col --;
                         break;
+                  case '/': /* Comments */
+                        i++;
+                        col++;
+                        if (json_comments_skip(&col, &row, json_content, (uint32_t *)&i, size)) {
+                              json_token_free(head);
+                              return (NULL);
+                        }
+                        break;
+
                   default:
-                        if (isprint(json_content[i])) {
+                        
+                        /* New line and carriage return in control character is valid between two tokens */
+                        if (json_content[i] != 0x0a && json_content[i] != 0x0d) {
                               json_tracker_print(tracker, row, col);
                               fprintf(stdout, " [JSON Lexer Error] Unknown token %c(%d)\n", 
                                           json_content[i], json_content[i]);
                               json_token_free(head);
                               return (NULL);
-                        }
-                        break;
+                        } 
+                        
             }
             i++;
             col++;
@@ -337,7 +344,10 @@ json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *j
       if (!isdigit(json_content[*i])) {
             return (number_token);
       }
-      for (; *i < len && isdigit(json_content[*i]); (*i)++, (*col)++);
+      if (json_content[*i] == '0' && isdigit(json_content[*i + 1])) {
+            return (number_token);
+      }
+      for (; *i < len && isdigit(json_content[*i]); (*i)++, (*col)++);  
       /* Fractional part */
       if (json_content[*i] == '.') {
             /* Fractional part must have one digit */
@@ -357,7 +367,7 @@ json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *j
             }
             for (; *i < len && isdigit(json_content[*i]); (*i)++, (*col)++);
       }
-      
+
       number_exit:
             number_token = calloc(1, sizeof(struct json_token));
             number_token->token_len = *i - j;
@@ -374,113 +384,165 @@ static struct json_token *
 json_string_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len, struct json_tracker *tracker)
 {
       struct json_token *new_token = NULL;
-      uint32_t j;
-      for (j = ++(*i); *i < len && json_content[*i] != '"'; (*i)++) {
-            if (json_content[(*i) - 1] != '\\' &&  json_content[*i] == '\\' && json_content[(*i) + 1] == '"') (*i)++;
-      }
-      if ((*i) == len) {
-            json_tracker_print(tracker, row, *col);
-            fprintf(stdout, "[JSON Lexer Error] Expected a comma as string terminator\n");
-            return (new_token);
-      }
-      new_token = calloc(1, sizeof(struct json_token));
-      new_token->token_len = *i - j;
-      new_token->token_type = STRING;
-      new_token->token_words = calloc(new_token->token_len + 1, sizeof(char));
-      new_token->col = *col;
-      new_token->row = row;
-      strncpy(new_token->token_words, json_content + j, *i - j);
-
-      char *tmp = calloc(new_token->token_len + 1, sizeof(char));
-      strncpy(tmp, new_token->token_words, strlen(new_token->token_words));
-                        
-      /* Process escape */
-      size_t k = 0;
-      for (size_t l = 0; l < new_token->token_len; l++, k++) {
-            if (new_token->token_words[l] == '\\') {
-                  switch (new_token->token_words[l + 1]) {
+      char *tmp =  calloc(BUFSIZ, sizeof(char));
+      int size = 0;
+      uint32_t j, left_col = *col;
+      bool is_closed_colon = false;
+      for (j = ++(*i); *i < len; (*i)++) {
+            /* Unescaped control char */
+            if (json_content[*i] != 0x7f && iscntrl(json_content[*i])) { 
+                  fprintf(stdout, "Unescaped control character: ascii_code(%d)\n", json_content[*i]);
+                  return (new_token);
+            }
+            if (json_content[*i] == '\\') {
+                  switch (json_content[++(*i)]) {
                         case 'r':
-                              new_token->token_words[++l] = '\r';
+                              tmp[size++] = '\r';
                               break;
                         case 'b':
-                              new_token->token_words[++l] = '\b';
+                              tmp[size++] = '\b';
                               break;
                         case 'n':
-                              new_token->token_words[++l] = '\n';
+                              tmp[size++] = '\n';
                               break;
                         case 't':
-                              new_token->token_words[++l] = '\t';
+                              tmp[size++] = '\t';
                               break;
+                        case 'f':
+                              tmp[size++] = '\f';
+                              break;
+                        case 'v':
+                              tmp[size++] = '\v';
+                              break;
+                        case '/':
                         case '\\':
-                              case '"':
-                              l++;
+                        case '"':
+                              tmp[size++] = json_content[*i];
+                              break;
+                        /* Single byte encoding */
+                        case 'x':
+                        case 'X':
+                              // 0x00~0xff
+                              (*i)++;
+                              if (!ishexnumber(json_content[*i]) || !ishexnumber(json_content[*i + 1])) {
+                                    json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
+                                    fprintf(stdout, "[JSON Lexer Error] Unknown hexiadecimal character");
+                                    free(tmp);
+                                    return (NULL);
+                              }
+                              char byte[3] = {json_content[*i], json_content[++(*i)], 0};
+                              uint8_t ch = (uint8_t)json_utils_hex2uint(byte);
+                              if (iscntrl(ch)) {
+                                    fprintf(stdout, "[JSON Lexer Error] Unescaped control character: asii_code(%d)\n", ch);
+                                    free(tmp);
+                                    return (NULL);
+                              }
+                              tmp[size++] = ch;
                               break;
                         case 'u':
                               /* Dealing with unicode */
-                              l += 2;
+                              (*i)++;
                               char unicode[5] = {0};
-                              for (size_t i = l, j = 0; l < i + 4  && l < new_token->token_len; l++) {
-                                    if (!ishexnumber(new_token->token_words[l])) {
-                                          json_tracker_print(tracker, new_token->row, new_token->col + json_utils_console_wstrlen(tmp, W_UTF8, l + 1));
-                                          fprintf(stdout, "[JSON Lexer Error] Unknown unicode character: %c\n", tmp[l]);
+                              for (size_t j = *i, k = 0; *i < j + 4  && *i < len; (*i)++, (*col)++) {
+                                    if (!ishexnumber(json_content[*i])) {
+                                          json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
+                                          fprintf(stdout, "[JSON Lexer Error] Unknown unicode character: %c\n", tmp[*i]);
                                           free(tmp);
-                                          free(new_token->token_words);
-                                          free(new_token);
                                           return (NULL);
                                     }
-                                    unicode[j++] = new_token->token_words[l];
+                                    unicode[k++] = json_content[*i];
                               }
                               /* Invalid unicode */
                               if (strlen(unicode) < 4) {
-                                          json_tracker_print(tracker, new_token->row, new_token->col + json_utils_console_wstrlen(tmp, W_UTF8, l + 1));
+                                          json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
                                           fprintf(stdout, "[JSON Lexer Error] Unknown unicode: \\u%s\n", unicode);
                                           free(tmp);
-                                          free(new_token->token_words);
-                                          free(new_token);
                                           return (NULL);
                               }
-
-                              uint32_t u = json_utils_hex2uint(unicode);
+                              (*i)--;
+                              // uint32_t u = json_utils_hex2uint(unicode);
                                                 
-                              /* U+ 0000 ~ U+007F */
-                              if (u <= json_utils_hex2uint("007F")) {
-                                    new_token->token_words[k] = u & 0x7f;
-                              }
-                              /* U+ 0080 ~ U+07FF */
-                              else if (u <= json_utils_hex2uint("07FF")) {
-                                    new_token->token_words[k++] = (0x6 << 5) + (u >> 6);
-                                    new_token->token_words[k] = (1 << 7) + (u & 0x3f);
-                              }
-                              /* U+ 0800 ~ U+FFFF */
-                              else if (u <= json_utils_hex2uint("FFFF")){
-                                    new_token->token_words[k++] = (0xe << 4) + (u >> 12);
-                                    new_token->token_words[k++] = (1 << 7) + ((u >> 6) & 0x3f);
-                                    new_token->token_words[k] = (1 << 7) + (u & 0x3f);
-                              }
-                              /*  U+10000 ~ U+10FFFF */
-                              else {
+                              // /* U+ 0000 ~ U+007F */
+                              // if (u <= json_utils_hex2uint("007F")) {
+                              //       tmp[k] = u & 0x7f;
+                              // }
+                              // /* U+ 0080 ~ U+07FF */
+                              // else if (u <= json_utils_hex2uint("07FF")) {
+                              //       tmp[k++] = (0x6 << 5) + (u >> 6);
+                              //       tmp[k] = (1 << 7) + (u & 0x3f);
+                              // }
+                              // /* U+ 0800 ~ U+FFFF */
+                              // else if (u <= json_utils_hex2uint("FFFF")){
+                              //       tmp[k++] = (0xe << 4) + (u >> 12);
+                              //       tmp[k++] = (1 << 7) + ((u >> 6) & 0x3f);
+                              //       tmp[k] = (1 << 7) + (u & 0x3f);
+                              // }
+                              // /*  U+10000 ~ U+10FFFF */
+                              // else {
 
-                              }
-                              l--;
-                              continue; 
-                        default:
-                              json_tracker_print(tracker, new_token->row, new_token->col + json_utils_console_wstrlen(tmp, W_UTF8, l + 1));
-                              fprintf(stdout, "[JSON Lexer Error] Unknown escape words %c%c\n", tmp[l], tmp[l + 1]);
-                              free(tmp);
-                              free(new_token->token_words);
-                              free(new_token);
-                              return(NULL);
+                              // }
+                              // l--;
+                              // continue;
+                              break; 
+                        default: 
+                              return (new_token);
                   }
             }
-            new_token->token_words[k] = new_token->token_words[l];
+            else if (json_content[*i] == '"') {
+                  is_closed_colon = true;
+                  break;
+            }
+            else {
+                  tmp[size++] = json_content[*i];
+            }
       }
-      new_token->token_words[k] = '\0';
-      new_token->token_len = strlen(new_token->token_words);
+      if (!is_closed_colon && *i == len) {
+            return (new_token);
+      }
+
+      new_token = calloc(1, sizeof(struct json_token));
+      new_token->token_len = strlen(tmp);
+      new_token->token_type = STRING;
+      new_token->token_words = calloc(strlen(tmp) + 1, sizeof(char));
+      new_token->col = left_col;
+      new_token->row = row;
+      strncpy(new_token->token_words, tmp, strlen(tmp));
       *col = *col + json_utils_console_wstrlen(tmp, W_UTF8, strlen(tmp)) + 1;
       free(tmp);
       // printf("Type: STRING \t\ttoken: %s\n", q->token_words);
       token->next_token = new_token;
       return (new_token);
+}
+
+static int 
+json_comments_skip(uint32_t *col, uint32_t *row, char *json_content, uint32_t *i, uint32_t len)
+{
+      /* Single comment */
+      if (json_content[*i] == '/') {
+            /*  */
+            for ((*i)++, (*col)++;*i < len  && json_content[*i] != '\r' && json_content[*i] != '\n'; (*i)++, (*col)++);
+            if (json_content[*i] == '\r' || json_content[*i] == '\n') {
+                  (*i)--;
+            }
+      }
+      /* Multi-line comment */
+      else if (json_content[*i] == '*') {
+            for ((*i)++, (*col)++; *i < len && json_content[*i] != '*' && json_content[*i + 1] != '/'; (*i)++, (*col)++) {
+                  if (json_content[*i] == '\n' || json_content[*i] == '\r') {
+                        (*row)++;
+                        *col = -1; 
+                  }
+            }
+            if (*i < len) {
+                  (*i)++, (*col)++;
+            }
+      }
+      /* Invalid token */
+      else {
+            return (1);
+      }
+
+      return (0);
 }
 
 static void 
@@ -536,6 +598,14 @@ json_parser(struct json_token *head, struct json_tracker *tracker)
             #endif // DEBUG
             root->value_type = V_ARRAY;
             remain = json_parse_array(head, root, true, e_pkt);
+      }
+      /* Structure only */
+      else if (head->token_type == STRING || head->token_type == NUMBER || head->token_type == BOOLEAN || head->token_type == NULL_OBJ) {
+            root->value_type = head->token_type;
+            root->key_value = false;
+            root->data = calloc(head->token_len, sizeof(char));
+            strncpy(root->data, head->token_words, head->token_len);
+            remain = head;
       }
       else {
             json_tracker_print(tracker, head->row, head->col);
@@ -627,7 +697,7 @@ json_parse_object(struct json_token *token, struct json_obj *obj, bool can_end, 
             obj->next_key->value_type = V_STRING;
             obj->next_key->data = calloc(strlen(token->token_words) + 1, sizeof(char));
             strncpy(obj->next_key->data, token->token_words, strlen(token->token_words));
-            obj->key_value = true;
+            obj->next_key->key_value = true;
             obj->next_key->prev_key = obj;
             obj = obj->next_key;
       }
@@ -921,10 +991,10 @@ json_query_command_free(struct json_query_command *commands)
       free(commands); 
 }
 struct json_obj* 
-from_json(char *json_content)
+from_json(char *json_content, int size)
 {
-      struct json_tracker *tracker = json_tracker_init(json_content);
-      struct json_token *token = json_lexer(json_content, tracker);
+      struct json_tracker *tracker = json_tracker_init(json_content, size);
+      struct json_token *token = json_lexer(json_content, size, tracker);
       if (!token) return (NULL);
       struct json_obj *obj = json_parser(token, tracker);
       if (!obj) goto exit;
@@ -1473,6 +1543,15 @@ json_build(struct json_obj *root, char *json_content, uint32_t size, bool beautf
             *json_content = '[';
             built_size = json_build_array(root->next_key, json_content, size, built_size, beautfy, tab_size, 1);
       }
+      /* Structure only */
+      else if (root->value_type == V_STRING) {
+            built_size = json_build_string(root->data, json_content, size, 0);
+      }
+      else if (root->value_type == V_BOOL || root->value_type == V_NUMBER || root->value_type == V_NULL) {
+            for (; *(root->data + built_size); built_size++) {
+                  json_content[built_size] = root->data[built_size];
+            }
+      }
       /* Other type is invalid */
       else {
             fprintf(stdout, "[JSON Build Error] Expected object or array as root in JSON\n");
@@ -1780,7 +1859,7 @@ json_utils_double2str(double value)
 int 
 json_utils_beautify(char *input, char *output, int tab_size)
 {
-      struct json_obj *obj = from_json(input);
+      struct json_obj *obj = from_json(input, strlen(input));
       if (!obj) return (1);
       tab_size = tab_size <= 0 ? DEFAULT_TAB_SIZE : tab_size; 
       return (!(json_build(obj, output, -1, true, tab_size) > 0));
@@ -1789,7 +1868,7 @@ json_utils_beautify(char *input, char *output, int tab_size)
 int 
 json_utils_minify(char *input, char *output)
 {
-      struct json_obj *obj = from_json(input);
+      struct json_obj *obj = from_json(input, strlen(input));
       if (!obj) return (1);
       return (!(json_build(obj, output, -1, false, -1) > 0));
 }
@@ -1864,4 +1943,48 @@ json_utils_console_wstrlen(char *s, int encoding, size_t slen)
       }
 
       return (len);
+}
+
+bool
+json_iterable(struct json_obj *obj)
+{
+      if (!obj) return (false);
+      return (obj->value_type == V_OBJECT || obj->value_type == V_ARRAY);
+}
+
+struct json_obj *
+json_next_key(struct json_obj *obj)
+{
+      // printf("Before:\n");
+      if (!obj) return (NULL);
+      // printf("key: %s\n", obj->data);
+      return (obj->next_key);
+}
+
+struct json_obj *
+json_begin(struct json_obj *obj)
+{
+      if (!json_iterable(obj)) {
+            return (NULL);
+      }
+      return (obj->next_key);
+}
+
+struct json_obj *
+json_get_value(struct json_obj *obj)
+{
+      if (!obj || !obj->key_value) {
+            return (obj);
+      }
+
+      return (obj->value);
+}
+
+char *
+json_get_key(struct json_obj *obj)
+{
+      if (!obj || !obj->key_value || obj->value_type == V_ARRAY || obj->value_type == V_OBJECT) {
+            return (NULL);
+      }
+      return (obj->data);
 }
