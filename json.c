@@ -421,7 +421,6 @@ json_string_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *j
                               break;
                         /* Single byte encoding */
                         case 'x':
-                        case 'X':
                               // 0x00~0xff
                               (*i)++;
                               if (!ishexnumber(json_content[*i]) || !ishexnumber(json_content[*i + 1])) {
@@ -459,30 +458,71 @@ json_string_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *j
                                           free(tmp);
                                           return (NULL);
                               }
-                              (*i)--;
-                              // uint32_t u = json_utils_hex2uint(unicode);
+                              
+                              uint32_t u = json_utils_hex2uint(unicode);
                                                 
-                              // /* U+ 0000 ~ U+007F */
-                              // if (u <= json_utils_hex2uint("007F")) {
-                              //       tmp[k] = u & 0x7f;
-                              // }
-                              // /* U+ 0080 ~ U+07FF */
-                              // else if (u <= json_utils_hex2uint("07FF")) {
-                              //       tmp[k++] = (0x6 << 5) + (u >> 6);
-                              //       tmp[k] = (1 << 7) + (u & 0x3f);
-                              // }
-                              // /* U+ 0800 ~ U+FFFF */
-                              // else if (u <= json_utils_hex2uint("FFFF")){
-                              //       tmp[k++] = (0xe << 4) + (u >> 12);
-                              //       tmp[k++] = (1 << 7) + ((u >> 6) & 0x3f);
-                              //       tmp[k] = (1 << 7) + (u & 0x3f);
-                              // }
-                              // /*  U+10000 ~ U+10FFFF */
-                              // else {
-
-                              // }
-                              // l--;
-                              // continue;
+                              /* U+ 0000 ~ U+007F */
+                              if (u <= 0x007F) {
+                                    tmp[size++] = u & 0x7f;
+                              }
+                              /* U+ 0080 ~ U+07FF */
+                              else if (u <= 0x07FF) {
+                                    tmp[size++] = (0x6 << 5) + (u >> 6);
+                                    tmp[size++] = (1 << 7) + (u & 0x3f);
+                              }
+                              /* U+ 0800 ~ U+FFFF */
+                              else if (u <= 0xFFFF){
+                                    /* Unicode range D800-DFFF is used for surrogate pairs in UTF-16 and CESU-8 transformation formats,
+                                    *  allowing these encodings to represent the supplementary plane code points, whose values are too 
+                                    * large to fit in 16 bits. A pair of 16-bit code points-the first from high surrogate area(D800-DBFF),
+                                    * and the second from the low surrogate area(DC00-DFFF)-are combined to form a 32-bit code
+                                    * point from the supplementary planes.
+                                    */
+                                    if (0xD800 <=u && u <= 0xDBFF) {
+                                          /* High surrogate */
+                                          u = (1 << 16) + ((u & 0x3ff) << 10); // 21 bits
+                                          char unicode[5] = {0};
+                                          if (json_content[*i] != '\\' && json_content[*i + 1] != 'u') {
+                                                return (new_token);
+                                          }
+                                          for (size_t j = (*i) += 2, k = 0; *i < j + 4  && *i < len; (*i)++, (*col)++) {
+                                                if (!ishexnumber(json_content[*i])) {
+                                                      json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
+                                                      fprintf(stdout, "[JSON Lexer Error] Unknown unicode character: %c\n", tmp[*i]);
+                                                      free(tmp);
+                                                      return (NULL);
+                                                }
+                                                unicode[k++] = json_content[*i];
+                                          }
+                                          /* Invalid unicode */
+                                          if (strlen(unicode) < 4) {
+                                                json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
+                                                fprintf(stdout, "[JSON Lexer Error] Unknown unicode: \\u%s\n", unicode);
+                                                free(tmp);
+                                                return (NULL);
+                                          }
+                                          /* Low surrogate */
+                                          uint32_t low_surrogate = json_utils_hex2uint(unicode);
+                                          if (0xDC00 > low_surrogate || low_surrogate > 0xDFFF) {
+                                                return (new_token);
+                                          }
+                                          u += (low_surrogate & 0x3ff);
+                                          
+                                          /* Transform to UTF-8 */
+                                          tmp[size++] = (0x1e << 3) + (u >> 18);
+                                          tmp[size++] = (1 << 7) + ((u >> 12) & 0x3f);
+                                          tmp[size++] = (1 << 7) + ((u >> 6) & 0x3f);
+                                          tmp[size++] = (1 << 7) + (u & 0x3f);
+                                    }
+                                    else {
+                                          tmp[size++] = (0xe << 4) + (u >> 12);
+                                          tmp[size++] = (1 << 7) + ((u >> 6) & 0x3f);
+                                          tmp[size++] = (1 << 7) + (u & 0x3f);
+                                    }
+                                    
+                              }
+                              
+                              (*i)--;
                               break; 
                         default: 
                               return (new_token);
@@ -1636,6 +1676,12 @@ json_build_string(char *string, char *json_content, uint32_t size, uint32_t buil
                   case '\t':
                         *(json_content + built_size++) = '\\';
                         *(json_content + built_size++) = 't';
+                  case '\f':
+                        *(json_content + built_size++) = '\\';
+                        *(json_content + built_size++) = 'f';
+                  case '\v':
+                        *(json_content + built_size++) = '\\';
+                        *(json_content + built_size++) = 'v';
                         break;
                   case '"':
                         *(json_content + built_size++) = '\\';
