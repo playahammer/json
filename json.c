@@ -10,6 +10,11 @@
 #define FALSE_LEN strlen("false")
 #define TRUE_LEN strlen("true")
 
+#if defined(_WIN32)
+#define ishexnumber isxdigit
+#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
+#endif
+
 static const char *bool_str[] = {
       "false",
       "true"
