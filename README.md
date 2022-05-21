@@ -1,6 +1,20 @@
 # json
 This project is a very tiny JSON parser and generator for C.
 
+## Value Types
+### Number
+We support there different number types: ```positive infinity```, ```negative infinity``` and ```NaN```.
+#### Positive infinity
+
+## Comments (JSON5 Only)
+Comments can be either single or multi-line and used same as you do in JavaScript. 
+```javascript
+// This is a single comment
+/*
+      This is a 
+      multi-line comment
+*/
+```
 ## APIs
 ### Base
 #### Serialize

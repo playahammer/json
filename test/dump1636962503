@@ -1,0 +1,12 @@
+./JSONTestSuite/test_parsing/y_string_last_surrogates_1_and_2.json
+./JSONTestSuite/test_parsing/y_string_accepted_surrogate_pair.json
+./JSONTestSuite/test_parsing/y_string_unicode_U+1FFFE_nonchar.json
+./JSONTestSuite/test_parsing/n_object_trailing_comment_slash_open.json
+./JSONTestSuite/test_parsing/n_number_hex_2_digits.json
+./JSONTestSuite/test_parsing/n_structure_object_with_comment.json
+./JSONTestSuite/test_parsing/y_string_unicode_U+10FFFE_nonchar.json
+./JSONTestSuite/test_parsing/n_number_+1.json
+./JSONTestSuite/test_parsing/y_string_surrogates_U+1D11E_MUSICAL_SYMBOL_G_CLEF.json
+./JSONTestSuite/test_parsing/y_string_accepted_surrogate_pairs.json
+./JSONTestSuite/test_parsing/n_object_trailing_comment.json
+./JSONTestSuite/test_parsing/n_number_hex_1_digit.json

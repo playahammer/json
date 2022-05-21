@@ -31,7 +31,7 @@ struct json_token {
 /* The minimum length of a JSON file is 2, a pair of bucket like '{}' or '[]' */
 #define MIN_JSON_LEN 2
 
-struct json_obj {
+typedef struct json_obj {
       /* It's used to look back keys, if has same key in the object, 
        * replace its data instead of creating a new same key.
        */
@@ -56,7 +56,7 @@ struct json_obj {
       uint8_t value_type;
       /* The flag tells us the data type, true is key and false is value */
       bool key_value;
-};
+}JSONObj;
 
 /* Query command */
 struct json_query_command{
@@ -68,48 +68,51 @@ struct json_query_command{
       struct json_query_command *next_cmd;
 };
 
-/* Error Tracker for lexing and parsing */
-struct json_tracker {
-      /* Line content ended with '\0' */
-      char *line;
-      /* Line number */
-      uint32_t row;
-      /* Next line */
-      struct json_tracker *next;
-      /* To void redundant printing, this field is only used by parser */
-      char *err_msg;
-};
-
-/* Error packet for helping print error */
-struct json_error_pkt {
-      /* The col and row where the error occurred */
-      uint32_t col;
-      uint32_t row;
-      /* Error message */
-      char err_msg[BUFSIZ];
-      /* Avoid to write error again */
-      bool error_occur;
-};
-/* Error information functions */
-static struct json_tracker *json_tracker_init(char *json_content, int size);
-static void json_tracker_print(struct json_tracker *tracker, uint32_t line, uint32_t col);
-static void json_tracker_free(struct json_tracker *tracker);
+typedef struct {
+      const char *json;
+      uint32_t length;
+      uint32_t cursor;
+}JSONReader;
 
 /* Serialize */
 /* Export JSON APIs for user */
-struct json_obj* from_json(char *json_content, int size);
+struct json_obj* from_json(const char *json_content, uint32_t size);
 void json_obj_free(struct json_obj *obj);
 /* Internal functions */
-static struct json_token *json_parse_object(struct json_token *token, struct json_obj *obj, bool can_end, struct json_error_pkt *e_pkt);
-static struct json_token *json_parse_array(struct json_token *token, struct json_obj *obj, bool can_end, struct json_error_pkt *e_pkt);
-static struct json_token *json_parse_dispatch(struct json_token *token, struct json_obj *obj, struct json_error_pkt *e_pkt);
-static struct json_token *json_lexer(char *json_content, const int size, struct json_tracker *tracker);
-static struct json_token *json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len);
-static struct json_token *json_string_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len, struct json_tracker *tracker);
 static int json_comments_skip(uint32_t *col, uint32_t *row, char *json_content, uint32_t *i, uint32_t len);
-static struct json_obj *json_parser(struct json_token *head, struct json_tracker *tracker);
-static void json_token_free(struct json_token *token);
-
+static JSONObj *json_parser(JSONReader *reader);
+#define MATCH_SUCCESS 0
+#define MATCH_FAILED  1
+static int match(JSONReader *reader, const char word);
+#define match_digit(reader)   match(reader, '0') || match(reader, '1') || match(reader, '2') || match(reader, '3') || match(reader, '4') || \
+                              match(reader, '5') || match(reader, '6') || match(reader, '7') || match(reader, '8') || match(reader, '9')
+#define match_alpha(reader)   match(reader, 'a') || match(reader, 'b') || match(reader, 'c') || match(reader, 'd') || match(reader, 'e') || \
+                              match(reader, 'f') || match(reader, 'g') || match(reader, 'h') || match(reader, 'i') || match(reader, 'j') || \
+                              match(reader, 'k') || match(reader, 'l') || match(reader, 'm') || match(reader, 'n') || match(reader, 'o') || \
+                              match(reader, 'p') || match(reader, 'q') || match(reader, 'r') || match(reader, 's') || match(reader, 't') || \
+                              match(reader, 'u') || match(reader, 'v') || match(reader, 'w') || match(reader, 'x') || match(reader, 'y') || \
+                              match(reader, 'z') || match(reader, 'A') || match(reader, 'B') || match(reader, 'C') || match(reader, 'D') || \
+                              match(reader, 'E') || match(reader, 'F') || match(reader, 'G') || match(reader, 'H') || match(reader, 'I') || \
+                              match(reader, 'J') || match(reader, 'K') || match(reader, 'L') || match(reader, 'M') || match(reader, 'N') || \
+                              match(reader, 'O') || match(reader, 'P') || match(reader, 'Q') || match(reader, 'R') || match(reader, 'S') || \
+                              match(reader, 'T') || match(reader, 'U') || match(reader, 'V') || match(reader, 'W') || match(reader, 'X') || \
+                              match(reader, 'Y') || match(reader, 'Z')
+static char expect(JSONReader *reader, const char word);
+static char expect_digit(JSONReader *reader);
+static char expect_alpha(JSONReader *reader);
+static void skip_space(JSONReader *reader);
+#define unexpected(reader) do {\
+            if (reader->cursor + 1 == reader->length) \
+                  fprintf(stderr, "Unexpect end of content");\
+            else   \
+            fprintf(stderr, "Unexpect word: %c(%d)\n", reader->json[reader->cursor + 1], reader->json[reader->cursor + 1]);\
+      }while (0);
+static JSONObj *json_parse_object(JSONReader *reader);
+static JSONObj *json_parse_array(JSONReader *reader);
+static JSONObj *json_parse_string(JSONReader *reader);
+static JSONObj *json_parse_number(JSONReader *reader);
+static JSONObj *json_parse_boolean(JSONReader *reader);
+static JSONObj *json_parse_null(JSONReader *reader);
 /* Operations */
 /* Query */
 struct json_obj *json_query(char *command, struct json_obj *obj);

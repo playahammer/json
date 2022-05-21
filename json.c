@@ -39,521 +39,6 @@ static const char *json_obj_type_strs[] = {
       NULL
 };
 
-static struct json_tracker* 
-json_tracker_init(char *json_content, int size)
-{
-      struct json_tracker *tracker = calloc(1, sizeof(struct json_tracker)), *p;
-      tracker->row = 0;
-      p = tracker;
-      size_t tracker_begin = 0, line = 1;
-      
-      for (size_t i = 0; i <= size; i++) {
-            if (json_content[i] == '\n' || i == size) {
-                  struct json_tracker *q = calloc(1, sizeof(struct json_tracker));
-                  q->row = line++;
-                  q->line = calloc(i - tracker_begin + 1, sizeof(char));
-                  strncpy(q->line, json_content + tracker_begin, i - tracker_begin);
-                  p->next = q;
-                  p = q;
-                  tracker_begin = i + 1;
-            }
-      }
-      return (tracker);
-}
-
-static void 
-json_tracker_print(struct json_tracker *tracker, uint32_t line, uint32_t col)
-{
-      if (line <= 0) return;
-
-      struct json_tracker *t = tracker->next;
-
-      /* Traceback up four rows of JSON content from the given line */
-      while (t && (long)line - 4 >= t->row) t = t->next;
-      
-      for (; t && line >= t->row; t = t->next) {
-            printf("%d%s\n", t->row, t->line);
-      }
-
-      /* Print space */
-      while (line) {
-            printf(" ");
-            line /= 10;
-      }
-      for (int i = 0; i < col; i++) {
-            printf(" "); 
-      } 
-      /* Print ^ */
-      printf("^");
-
-      /* Free tracker */
-      json_tracker_free(tracker);
-}
-
-static void 
-json_tracker_free(struct json_tracker *tracker)
-{
-      if (!tracker) {
-            return;
-      } 
-
-      struct json_tracker *t = tracker->next;
-
-      while (t) {
-            struct json_tracker *p = t->next;
-            if (t->line) free(t->line);
-            free(t);
-            t = p; 
-      }
-      free(tracker);
-}
-
-/**
- *  Turn json content of input into tokens.
-*/
-struct json_token*
-json_lexer(char *json_content, const int size, struct json_tracker *tracker)
-{
-      struct json_token *head = (struct json_token *)calloc(1, sizeof(struct json_token));
-      struct json_token *p = head, *q;
-      int i = 0, j = 0;
-      uint32_t row = 1, col = 0;
-
-      while (i < size) {
-            bool token_bool = false;
-            switch (json_content[i]) {
-                  case '{':
-                        q = calloc(1, sizeof(struct json_token)); 
-                        q->token_len = 1;
-                        q->token_type = LEFT_BUCKET;
-                        q->token_words = (char *)calloc(2, sizeof(char));
-                        q->col = col;
-                        q->row = row;
-                        q->token_words[0] = '{';
-                        // printf("Type: BUCKET_LEFT \ttoken: %c\n", q->token_words[0]);
-                        p->next_token = q;
-                        p = p->next_token;
-                        break;
-                  case '}':
-                        q = calloc(1, sizeof(struct json_token));
-                        q->token_len = 1;
-                        q->token_type = RIGHT_BUCKET;
-                        q->token_words = calloc(2, sizeof(char));
-                        q->token_words[0] = '}';
-                        q->col = col;
-                        q->row = row;
-                        // printf("Type: BUCKET_RIGHT \ttoken: %c\n", q->token_words[0]);
-                        p->next_token = q;
-                        p = p->next_token;
-                        break;
-                  case '[':
-                        q = calloc(1, sizeof(struct json_token));
-                        q->token_len = 1;
-                        q->token_type = LEFT_S_BUCKET;
-                        q->token_words = calloc(2, sizeof(char));
-                        q->token_words[0] = '[';
-                        q->col = col;
-                        q->row = row;
-                        // printf("Type: S_BUCKET_LEFT \ttoken: %c\n", q->token_words[0]);
-                        p->next_token = q;
-                        p = p->next_token;
-                        break;
-                  case ']':
-                        q = calloc(1, sizeof(struct json_token));
-                        q->token_len = 1;
-                        q->token_type = RIGHT_S_BUCKET;
-                        q->token_words = calloc(2, sizeof(char));
-                        q->token_words[0] = ']';
-                        q->col = col;
-                        q->row = row;
-                        // printf("Type: S_BUCKET_RIGHT \ttoken: %c\n", q->token_words[0]);
-                        p->next_token = q;
-                        p = p->next_token;
-                        break;
-                  case ':':
-                        q = calloc(1, sizeof(struct json_token));
-                        q->token_len = 1;
-                        q->token_type = COLON;
-                        q->token_words = calloc(2, sizeof(char));
-                        q->token_words[0] = ':';
-                        q->col = col;
-                        q->row = row;
-                        // printf("Type: COLON \t\ttoken: %c\n", q->token_words[0]);
-                        p->next_token = q;
-                        p = p->next_token;
-                        break;
-                  case ',':
-                        q = calloc(1, sizeof(struct json_token));
-                        q->token_len = 1;
-                        q->token_type = COMMA;
-                        q->token_words = calloc(2, sizeof(char));
-                        q->token_words[0] = ',';
-                        q->col = col;
-                        q->row = row;
-                        // printf("Type: COMMA \t\ttoken: %c\n", q->token_words[0]);
-                        p->next_token = q;
-                        p = p->next_token;
-                        break;
-                  case ' ': /* Space should be skipped */
-                        break;
-                  case '"': /* String */
-                        /* TODO: Support utf-8 encoding */
-                        p = json_string_lexer(p, &col, row, json_content, (uint32_t *)&i, size, tracker);
-                        if (!p) {
-                              json_token_free(head);
-                              return (NULL);
-                        }
-                        break;
-                  case '\n': /* Move to new line */
-                  case '\r':
-                        row ++;
-                        /* Reset col when turn into the new line */
-                        col = -1; 
-                        break;
-                  case 'f': /* Boolean: false and true */
-                  case 't':
-                        j = col;
-                        if(!strncmp("false", json_content + i, FALSE_LEN)) {
-                              token_bool = false;
-                              i += FALSE_LEN - 1;
-                              col += FALSE_LEN - 1;
-                        }
-                        else if (!strncmp("true", json_content + i, TRUE_LEN)) {
-                              token_bool = true;
-                              i += TRUE_LEN - 1;
-                              col += TRUE_LEN - 1;
-                        }
-                        else {
-                              json_tracker_print(tracker, row, col);
-                              fprintf(stdout, "[JSON Lexer Error] Unknown token: %c(%d)\n", json_content[i], json_content[i]);
-                              json_token_free(head);
-                              return (NULL);
-                        }
-
-                        q = calloc(1, sizeof(struct json_token));
-                        q->token_len = strlen(bool_str[token_bool]);
-                        q->token_type = BOOLEAN;
-                        q->token_words = calloc(strlen(bool_str[token_bool]) + 1, sizeof(char));
-                        q->col = j;
-                        q->row = row;
-                        strncpy(q->token_words, bool_str[token_bool], strlen(bool_str[token_bool]));
-                        // printf("Type: BOOLEAN \t\ttoken: %s\n", q->token_words);
-                        p->next_token = q;
-                        p = p->next_token;
-                        break;
-                  case 'n': /* null */
-                        if (strncmp("null", json_content + i, strlen("null"))) {
-                              json_tracker_print(tracker, row, col);
-                              fprintf(stdout, "[JSON Lexer Error] Unknown token: %c(%d)\n", json_content[i], json_content[i]);
-                              json_token_free(head);
-                              return (NULL);
-                        }
-                        q = calloc(1, sizeof(struct json_token));
-                        q->token_len = strlen("null");
-                        q->token_type = NULL_OBJ;
-                        q->token_words = calloc(strlen("null") + 1, sizeof(char));
-                        q->col = col;
-                        q->row = row;
-                        strncpy(q->token_words, "null", strlen("null"));
-                        // printf("Tyep: NULL_OBJ \t\ttoken: %s\n", q->token_words);
-                        p->next_token = q;
-                        p = p->next_token;
-                        i += strlen("null") - 1;
-                        col += strlen("null") - 1; 
-                        break;
-                  case '+':
-                  case '-':
-                  case '0':
-                  case '1':
-                  case '2':
-                  case '3':
-                  case '4':
-                  case '5':
-                  case '6':
-                  case '7':
-                  case '8':
-                  case '9': /* Number including integer and float */
-                        p = json_number_lexer(p, &col, row, json_content, (uint32_t *)&i, size);
-                        if (!p) {
-                              json_tracker_print(tracker, row, col);
-                              fprintf(stdout, "[JSON Lexer Error] Invalid number");
-                              json_token_free(head);
-                              return (NULL);
-                        }
-                        i --;
-                        col --;
-                        break;
-                  case '/': /* Comments */
-                        i++;
-                        col++;
-                        if (json_comments_skip(&col, &row, json_content, (uint32_t *)&i, size)) {
-                              json_token_free(head);
-                              return (NULL);
-                        }
-                        break;
-
-                  default:
-                        
-                        /* New line and carriage return in control character is valid between two tokens */
-                        if (json_content[i] != 0x0a && json_content[i] != 0x0d) {
-                              json_tracker_print(tracker, row, col);
-                              fprintf(stdout, " [JSON Lexer Error] Unknown token %c(%d)\n", 
-                                          json_content[i], json_content[i]);
-                              json_token_free(head);
-                              return (NULL);
-                        } 
-                        
-            }
-            i++;
-            col++;
-
-      }
-
-      return (head);
-}
-
-/**
- * Number := DecimalNumber | HexNumber
- * DecimalNumber := DecimalInteger [FractionalPart] [ExponentPart]
- * DecimalInteger := [+|-] DecimalDigits
- * DecimalDigits := [0-9]+
- * FractionalPart := "." DecimalDigits
- * ExponentPart := (E|e) DecimalInteger
- * HexNumber := ("0x"|"0X") DecimalDigits
- * 
-*/
-static struct json_token *
-json_number_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len)
-{
-      struct json_token *number_token = NULL;
-      /* Store col value */
-      int num_col = *col;
-      uint32_t j = *i;
-      /* Hexadecimal number */
-      if (json_content[*i] == '0' && (json_content[*i + 1] == 'x' || json_content[*i + 1] == 'X')) {
-            for((*i) += 2, (*col) += 2; *i < len && ishexnumber(json_content[*i]); (*i)++, (*col)++);
-            /* At least it must have one decimal digit */
-            if (j + 2 == *i) return (number_token);
-            goto number_exit;
-      }
-
-      /* Decimal number */
-      if (json_content[*i] == '+' || json_content[*i] == '-') (*i)++, (*col)++;
-      /* Integer part */
-      /* Number at least has one digit */
-      if (!isdigit(json_content[*i])) {
-            return (number_token);
-      }
-      if (json_content[*i] == '0' && isdigit(json_content[*i + 1])) {
-            return (number_token);
-      }
-      for (; *i < len && isdigit(json_content[*i]); (*i)++, (*col)++);  
-      /* Fractional part */
-      if (json_content[*i] == '.') {
-            /* Fractional part must have one digit */
-            if (!isdigit(json_content[*i + 1])) {
-                  return (number_token);
-            }
-            for ((*i)++, (*col)++; *i < len && isdigit(json_content[*i]); (*i)++, (*col)++);
-
-      } 
-      /* Exponent part of scientific nation */
-      if (json_content[*i] == 'E' || json_content[*i] == 'e') {
-            (*i)++, (*col)++;
-            if (json_content[*i] == '+' || json_content[*i] == '-') (*i)++, (*col)++;
-            /* Must have one digital */
-            if (!isdigit(json_content[*i])) {
-                  return (number_token);
-            }
-            for (; *i < len && isdigit(json_content[*i]); (*i)++, (*col)++);
-      }
-
-      number_exit:
-            number_token = calloc(1, sizeof(struct json_token));
-            number_token->token_len = *i - j;
-            number_token->token_type = NUMBER;
-            number_token->token_words = calloc(*i - j + 1, sizeof(char));
-            number_token->col = num_col;
-            number_token->row = row;
-            strncpy(number_token->token_words, json_content + j, *i - j);
-            token->next_token = number_token;
-            return (number_token);
-}
-
-static struct json_token *
-json_string_lexer(struct json_token *token, uint32_t *col, uint32_t row, char *json_content, uint32_t *i, uint32_t len, struct json_tracker *tracker)
-{
-      struct json_token *new_token = NULL;
-      char *tmp =  calloc(BUFSIZ, sizeof(char));
-      int size = 0;
-      uint32_t j, left_col = *col;
-      bool is_closed_colon = false;
-      for (j = ++(*i); *i < len; (*i)++) {
-            /* Unescaped control char */
-            if (json_content[*i] != 0x7f && iscntrl(json_content[*i])) { 
-                  fprintf(stdout, "Unescaped control character: ascii_code(%d)\n", json_content[*i]);
-                  return (new_token);
-            }
-            if (json_content[*i] == '\\') {
-                  switch (json_content[++(*i)]) {
-                        case 'r':
-                              tmp[size++] = '\r';
-                              break;
-                        case 'b':
-                              tmp[size++] = '\b';
-                              break;
-                        case 'n':
-                              tmp[size++] = '\n';
-                              break;
-                        case 't':
-                              tmp[size++] = '\t';
-                              break;
-                        case 'f':
-                              tmp[size++] = '\f';
-                              break;
-                        case 'v':
-                              tmp[size++] = '\v';
-                              break;
-                        case '/':
-                        case '\\':
-                        case '"':
-                              tmp[size++] = json_content[*i];
-                              break;
-                        /* Single byte encoding */
-                        case 'x':
-                              // 0x00~0xff
-                              (*i)++;
-                              if (!ishexnumber(json_content[*i]) || !ishexnumber(json_content[*i + 1])) {
-                                    json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
-                                    fprintf(stdout, "[JSON Lexer Error] Unknown hexiadecimal character");
-                                    free(tmp);
-                                    return (NULL);
-                              }
-                              char byte[3] = {json_content[*i], json_content[++(*i)], 0};
-                              uint8_t ch = (uint8_t)json_utils_hex2uint(byte);
-                              if (iscntrl(ch)) {
-                                    fprintf(stdout, "[JSON Lexer Error] Unescaped control character: asii_code(%d)\n", ch);
-                                    free(tmp);
-                                    return (NULL);
-                              }
-                              tmp[size++] = ch;
-                              break;
-                        case 'u':
-                              /* Dealing with unicode */
-                              (*i)++;
-                              char unicode[5] = {0};
-                              for (size_t j = *i, k = 0; *i < j + 4  && *i < len; (*i)++, (*col)++) {
-                                    if (!ishexnumber(json_content[*i])) {
-                                          json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
-                                          fprintf(stdout, "[JSON Lexer Error] Unknown unicode character: %c\n", tmp[*i]);
-                                          free(tmp);
-                                          return (NULL);
-                                    }
-                                    unicode[k++] = json_content[*i];
-                              }
-                              /* Invalid unicode */
-                              if (strlen(unicode) < 4) {
-                                          json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
-                                          fprintf(stdout, "[JSON Lexer Error] Unknown unicode: \\u%s\n", unicode);
-                                          free(tmp);
-                                          return (NULL);
-                              }
-                              
-                              uint32_t u = json_utils_hex2uint(unicode);
-                                                
-                              /* U+ 0000 ~ U+007F */
-                              if (u <= 0x007F) {
-                                    tmp[size++] = u & 0x7f;
-                              }
-                              /* U+ 0080 ~ U+07FF */
-                              else if (u <= 0x07FF) {
-                                    tmp[size++] = (0x6 << 5) + (u >> 6);
-                                    tmp[size++] = (1 << 7) + (u & 0x3f);
-                              }
-                              /* U+ 0800 ~ U+FFFF */
-                              else if (u <= 0xFFFF){
-                                    /* Unicode range D800-DFFF is used for surrogate pairs in UTF-16 and CESU-8 transformation formats,
-                                    *  allowing these encodings to represent the supplementary plane code points, whose values are too 
-                                    * large to fit in 16 bits. A pair of 16-bit code points-the first from high surrogate area(D800-DBFF),
-                                    * and the second from the low surrogate area(DC00-DFFF)-are combined to form a 32-bit code
-                                    * point from the supplementary planes.
-                                    */
-                                    if (0xD800 <=u && u <= 0xDBFF) {
-                                          /* High surrogate */
-                                          u = (1 << 16) + ((u & 0x3ff) << 10); // 21 bits
-                                          char unicode[5] = {0};
-                                          if (json_content[*i] != '\\' && json_content[*i + 1] != 'u') {
-                                                return (new_token);
-                                          }
-                                          for (size_t j = (*i) += 2, k = 0; *i < j + 4  && *i < len; (*i)++, (*col)++) {
-                                                if (!ishexnumber(json_content[*i])) {
-                                                      json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
-                                                      fprintf(stdout, "[JSON Lexer Error] Unknown unicode character: %c\n", tmp[*i]);
-                                                      free(tmp);
-                                                      return (NULL);
-                                                }
-                                                unicode[k++] = json_content[*i];
-                                          }
-                                          /* Invalid unicode */
-                                          if (strlen(unicode) < 4) {
-                                                json_tracker_print(tracker, row, left_col + json_utils_console_wstrlen(tmp, W_UTF8, *col - left_col + 1));
-                                                fprintf(stdout, "[JSON Lexer Error] Unknown unicode: \\u%s\n", unicode);
-                                                free(tmp);
-                                                return (NULL);
-                                          }
-                                          /* Low surrogate */
-                                          uint32_t low_surrogate = json_utils_hex2uint(unicode);
-                                          if (0xDC00 > low_surrogate || low_surrogate > 0xDFFF) {
-                                                return (new_token);
-                                          }
-                                          u += (low_surrogate & 0x3ff);
-                                          
-                                          /* Transform to UTF-8 */
-                                          tmp[size++] = (0x1e << 3) + (u >> 18);
-                                          tmp[size++] = (1 << 7) + ((u >> 12) & 0x3f);
-                                          tmp[size++] = (1 << 7) + ((u >> 6) & 0x3f);
-                                          tmp[size++] = (1 << 7) + (u & 0x3f);
-                                    }
-                                    else {
-                                          tmp[size++] = (0xe << 4) + (u >> 12);
-                                          tmp[size++] = (1 << 7) + ((u >> 6) & 0x3f);
-                                          tmp[size++] = (1 << 7) + (u & 0x3f);
-                                    }
-                                    
-                              }
-                              
-                              (*i)--;
-                              break; 
-                        default: 
-                              return (new_token);
-                  }
-            }
-            else if (json_content[*i] == '"') {
-                  is_closed_colon = true;
-                  break;
-            }
-            else {
-                  tmp[size++] = json_content[*i];
-            }
-      }
-      if (!is_closed_colon && *i == len) {
-            return (new_token);
-      }
-
-      new_token = calloc(1, sizeof(struct json_token));
-      new_token->token_len = strlen(tmp);
-      new_token->token_type = STRING;
-      new_token->token_words = calloc(strlen(tmp) + 1, sizeof(char));
-      new_token->col = left_col;
-      new_token->row = row;
-      strncpy(new_token->token_words, tmp, strlen(tmp));
-      *col = *col + json_utils_console_wstrlen(tmp, W_UTF8, strlen(tmp)) + 1;
-      free(tmp);
-      // printf("Type: STRING \t\ttoken: %s\n", q->token_words);
-      token->next_token = new_token;
-      return (new_token);
-}
-
 static int 
 json_comments_skip(uint32_t *col, uint32_t *row, char *json_content, uint32_t *i, uint32_t len)
 {
@@ -604,370 +89,207 @@ json_token_free(struct json_token *token)
       }
       free(token);
 }
+static char expect(JSONReader *reader, const char word) {
+      if (match(reader, word) == MATCH_FAILED) 
+            return 0;
+      return reader->json[reader->cursor++];
+}
 
-static struct json_obj* 
-json_parser(struct json_token *head, struct json_tracker *tracker)
-{
+static char expect_digit(JSONReader *reader) {
+      if (match_digit(reader) == MATCH_FAILED) 
+            return 0;
+      return reader->json[reader->cursor++];
+}
+
+static char expect_alpha(JSONReader *reader) {
+      if (match_alpha(reader) == MATCH_FAILED) 
+            return 0;
+      return reader->json[reader->cursor++];
+}
+static int match(JSONReader *reader, const char word) {
+      if (!reader || reader->cursor + 1 == reader->length)
+            return MATCH_FAILED;
+      if (reader->json[reader->cursor + 1] != word) 
+            return MATCH_FAILED;
+      return MATCH_SUCCESS;
+}
+static void skip_space(JSONReader *reader) {
+      while (match(reader, ' ') == MATCH_SUCCESS || match(reader, '\n') == MATCH_SUCCESS || match(reader, '\t') == MATCH_SUCCESS) {
+            reader->cursor++;
+      }
+}
+static JSONObj* json_parser(JSONReader *reader) {
       #ifdef DEBUG
       printf("=> Parsing\n");
       #endif // DEBUG
-      struct json_obj *root = (struct json_obj *)calloc(1, sizeof(struct json_obj));
-
-      head = head->next_token;
-      if (!head) {
-            fprintf(stdout, "[JSON Parser Error] Empty JSON content\n");
-            return (NULL);
+      JSONObj *root = NULL;
+      skip_space(reader);
+      if (expect(reader, '{')) {
+            root = json_parse_object(reader);
+      } else if (expect(reader, '[')) {
+            root = json_parse_array(reader);
+      } else if (match(reader, '+') || match(reader, '-') || match_digit(reader)) {
+            root = json_parse_number(reader);
+      } else if (match(reader, 't') || match(reader, 'f')) {
+            root = json_parse_boolean(reader); 
+      } else if (match(reader, 'n')) {
+            root = json_parse_null(reader);
+      } else if (match(reader, '"')) {
+            root = json_parse_string(reader);
+      } else {
+            unexpected(reader);
       }
-
-      /* Create a json error packet instance */
-      struct json_error_pkt *e_pkt = calloc(1, sizeof(struct json_error_pkt));
-      struct json_token *remain = NULL;
-
-      /* When meet one left (square) bucket, create a new object(array) root node */
-      if (head->token_type == LEFT_BUCKET) {
-            #ifdef DEBUG
-            printf("%s", head->token_words);
-            #endif // DEBUG
-            root->value_type = V_OBJECT;
-            remain = json_parse_object(head, root, true, e_pkt);
-            
-      }
-      else if (head->token_type == LEFT_S_BUCKET) {
-            #ifdef DEBUG
-            printf("%s", head->token_words);
-            #endif // DEBUG
-            root->value_type = V_ARRAY;
-            remain = json_parse_array(head, root, true, e_pkt);
-      }
-      /* Structure only */
-      else if (head->token_type == STRING || head->token_type == NUMBER || head->token_type == BOOLEAN || head->token_type == NULL_OBJ) {
-            root->value_type = head->token_type;
-            root->key_value = false;
-            root->data = calloc(head->token_len, sizeof(char));
-            strncpy(root->data, head->token_words, head->token_len);
-            remain = head;
-      }
-      else {
-            json_tracker_print(tracker, head->row, head->col);
-            fprintf(stdout, "[JSON Parser Error] JSON shuold begin with left (square) bucket, but got %s\n",
-                  token_type_strs[head->token_type]);
-            return (NULL);
-      }
-
       #ifdef DEBUG
       printf("\n");
       #endif // DEBUG
-
-      if (!remain) {
-            json_tracker_print(tracker, e_pkt->row, e_pkt->col);
-            fprintf(stdout, "[JSON Parser Error] %s\n", e_pkt->err_msg);
-            return (NULL);
-      } 
-      else if (remain->next_token) {
-            json_tracker_print(tracker, remain->row, remain->col);
-            fprintf(stdout, "[JSON Parser Error] Meet the whole JSON terminator but still have other words\n");
-            return (NULL);
-      }
-
-      #ifdef DEBUG
-      printf("=> Parsing end\n");
-      #endif // DEBUG
-
-      return (root);
+      return root;
 }
 
-/**
- *  @param token, struct json_token
- *  @param obj, struct json_obj
- *  @param can_end, bool. The flag to mark empty obejct.
- *  @param e_pkt, struct json_error_pkt. Record the error message.
- *  @return Current token, return null if error occured or end.
-*/
-
-static struct json_token * 
-json_parse_object(struct json_token *token, struct json_obj *obj, bool can_end, struct json_error_pkt *e_pkt)
-{
-      /* Error occured */
-      if (!token) 
-            return (NULL);
-
-      /* Move to the next token when the next token is not null */
-      if (!token->next_token) {
-            if (!e_pkt->error_occur) {
-                  sprintf(e_pkt->err_msg, "Object need a right bucket(})");
-                  e_pkt->row = token->row;
-                  e_pkt->col = token->col;
-                  e_pkt->error_occur = true;
-            }
-            return (NULL);
-      }
-      token = token->next_token;
-
-      /* Empty object */
-      if (can_end && token->token_type == RIGHT_BUCKET) {
-            #ifdef DEBUG
-            printf("%s", token->token_words);
-            #endif // DEBUG
-            return (token);
-      }
-
-      /* Non-Empty Object */
-      /* Key */
-      if (token->token_type != STRING) {
-            /* Key should be string type */
-            sprintf(e_pkt->err_msg, "JSON's key should be string, but got %s", 
-                  token_type_strs[token->token_type]);
-            e_pkt->row = token->row;
-            e_pkt->col = token->col;
-            e_pkt->error_occur = true;
-            return (NULL);
-      }
-
-      /* Firstly, look over the created keys weather it has a same key. */
-      struct json_obj *prev = obj, *target = NULL;
-      while (prev) {
-            if (prev->data && !strncmp(prev->data, token->token_words, strlen(token->token_words))) {
-                  target = prev;
-            }
-            prev = prev->prev_key;
-      }
-      /* If it dose not exsit same key, create a new key and copy the token words to the data field. */
-      if (!target) {
-            obj->next_key = calloc(1, sizeof(struct json_obj));
-            obj->next_key->value_type = V_STRING;
-            obj->next_key->data = calloc(strlen(token->token_words) + 1, sizeof(char));
-            strncpy(obj->next_key->data, token->token_words, strlen(token->token_words));
-            obj->next_key->key_value = true;
-            obj->next_key->prev_key = obj;
-            obj = obj->next_key;
-      }
-
-      #ifdef DEBUG
-      printf("\"%s\"", token->token_words);
-      #endif // DEBUG
-      
-      /* Colon */
-      if (!token->next_token) {
-            if (!e_pkt->error_occur) {
-                  sprintf(e_pkt->err_msg, "Expected a colon to separate key and value");
-                  e_pkt->row = token->row;
-                  e_pkt->col = token->col;
-                  e_pkt->error_occur = true;
-            }
-            return (NULL);
-      }
-      token = token->next_token;
-
-      if (token->token_type != COLON) {
-            if (!e_pkt->error_occur) {
-                  sprintf(e_pkt->err_msg, "Expected a colon to separate key and value");
-                  e_pkt->row = token->row;
-                  e_pkt->col = token->col;
-                  e_pkt->error_occur = true;
-            }
-            return (NULL);
-      }
-
-      #ifdef DEBUG
-      printf("%s", token->token_words);
-      #endif // DEBUG
-      
-      /* Value */
-      /* If key is in the created keys, move to the target position. */
-      if (target)
-            token = json_parse_dispatch(token, target, e_pkt);
-      /* If it's a new key, go on. */
-      else
-            token = json_parse_dispatch(token, obj, e_pkt);
-      if (!token) return (NULL);  
-      
-      if (!token->next_token) {
-            if (e_pkt->error_occur) {
-                  sprintf(e_pkt->err_msg, "Missing object terminator");
-                  e_pkt->row = token->row;
-                  e_pkt->col = token->col;
-                  e_pkt->error_occur = true;
-            }
-            return (NULL);
-      }
-      token = token->next_token;
-      
-      #ifdef DEBUG
-      printf("%s", token->token_words);
-      #endif // DEBUG
-      /* Comma, Other keys and values behind current k-v */
-      if (token->token_type == COMMA) {
-            token = json_parse_object(token, obj, false, e_pkt);
-      }
-      /* Right bucket, end of object */
-      else if (token->token_type != RIGHT_BUCKET) {
-            if (!e_pkt->error_occur) {
-                  sprintf(e_pkt->err_msg, "Missing object terminator");
-                  e_pkt->row = token->row;
-                  e_pkt->col = token->col;
-                  e_pkt->error_occur = true;
-            }
-            return (NULL);
-      }
-      return (token);
+static JSONObj *json_parse_string(JSONReader *reader) {
+      return NULL;
 }
 
-static struct json_token* 
-json_parse_array(struct json_token *token, struct json_obj *obj, bool can_end, struct json_error_pkt *e_pkt)
-{
-      /* Error occured */
-      if (!token) return (NULL);
-      char tmp[BUFSIZ] = {0};
-      
-      /* Move to the next token when next token is not null */
-      if (!token->next_token) {
-            if (!e_pkt->error_occur) {
-                  sprintf(e_pkt->err_msg, "Array need a right square bucket");
-                  e_pkt->row = token->row;
-                  e_pkt->col = token->col;
-                  e_pkt->error_occur = true;
-            }
-            return (NULL);
-      }
-      
-      /* Empty array */
-      if (can_end && token->next_token->token_type == RIGHT_S_BUCKET) {
-            #ifdef DEBUG
-            printf("%s", token->next_token->token_words);
-            #endif // DEBUG
-            return (token->next_token);
-      }
-      
-      /* Create a key as index for array */
-      obj->next_key = calloc(1, sizeof(struct json_obj));
-      obj->next_key->key_value = true;
-      /* The data is key and number type, it must be index of array. */
-      obj->next_key->value_type = V_NUMBER; 
-
-      /* Head node of array */
-      if (obj->value_type == V_ARRAY) {
-            obj->next_key->data = calloc(2, sizeof(char));
-            obj->next_key->data[0] = '0';
-      }
-      else {
-            /* Compute index of next value */
-            uint32_t index = atol(obj->data) + 1;
-            sprintf(tmp, "%u", index);
-            obj->next_key->data = calloc(strlen(tmp) + 1, sizeof(char));
-            strncpy(obj->next_key->data, tmp, strlen(tmp));
-      }
-      obj = obj->next_key;
-
-      /* Non-empty array */
-      /* Array value */
-      token = json_parse_dispatch(token, obj, e_pkt);
-      if (!token) return (NULL);
-      
-      if (!token->next_token) {
-            if (!e_pkt->error_occur) {
-                  e_pkt->row = token->row;
-                  e_pkt->col = token->col;
-                  e_pkt->error_occur = true;
-                  sprintf(e_pkt->err_msg, "Array need a comma to sperate value");
-            }
-            return (NULL);
-      }
-
-      token = token->next_token;
-      
-      #ifdef DEBUG
-      printf("%s", token->token_words);
-      #endif // DEBUG
-      /* Other array value */
-      if (token->token_type == COMMA) {
-            token = json_parse_array(token, obj, false, e_pkt);
-      }
-      /* Right square bucket, end of array */
-      else if (token->token_type == RIGHT_S_BUCKET) {
-            token = token;
-      }
-      else {
-            e_pkt->row = token->row;
-            e_pkt->col = token->col;
-            e_pkt->error_occur = true;
-            sprintf(e_pkt->err_msg, "Missing array terminator");
-            return (NULL);
-      }
-
-      return (token);
+static JSONObj *json_parse_number(JSONReader *reader) {
+      return NULL;
 }
 
-static struct json_token* 
-json_parse_dispatch(struct json_token *token, struct json_obj *obj, struct json_error_pkt *e_pkt)
-{
-      if (!token) return (NULL);
-
-      if (!token->next_token) {
-            if (!e_pkt->error_occur) {
-                  sprintf(e_pkt->err_msg, "JSON object need value");
-                  e_pkt->row = token->row;
-                  e_pkt->col = token->col;
-                  e_pkt->error_occur = true;
-            }
-            return (NULL);
+static JSONObj *json_parse_boolean(JSONReader *reader) {
+      if (expect(reader, 't') && expect(reader, 'r') && expect(reader, 'u') && expect(reader, 'e')) {
+            JSONObj *value = calloc(1, sizeof(JSONObj));
+            value->key_value = false;
+            value->data = calloc(4, sizeof(char));
+            strncpy(value->data, "true", 4);
+            return value;
+      } else if (expect(reader, 'f') && expect(reader, 'a') && expect(reader, 'l') && expect(reader, 's') && expect(reader, 'e')) {
+            JSONObj *value = calloc(1, sizeof(JSONObj));
+            value->key_value = false;
+            value->data = calloc(4, sizeof(char));
+            strncpy(value->data, "false", 5);
+            return value;
       }
-      token = token->next_token;
-
-      // Value
-      switch (token->token_type)
-      {
-      case NUMBER:  
-            /* Number */
-      case BOOLEAN:
-            /* Boolean */
-      case NULL_OBJ:
-            /* Null */
-      case STRING:
-            /* String */ 
-            #ifdef DEBUG
-            if (token->token_type == STRING)
-                  printf("\"%s\"", token->token_words);
-            else printf("%s", token->token_words);
-            #endif // DEBUG
+      unexpected(reader);
+      return NULL;
+}
+static JSONObj *json_parse_null(JSONReader *reader) {
       
-            /* General value */
-            obj->value = calloc(1, sizeof(struct json_obj));
-            obj->value->data = calloc(strlen(token->token_words) + 1, sizeof(char));
-            obj->value->key_value = false;
-            obj->value->value_type = token->token_type;
-            strncpy(obj->value->data, token->token_words, strlen(token->token_words));
-            // token = token->next_token;
-            break;
-      case LEFT_S_BUCKET:
-            /* Array */
-            #ifdef DEBUG
-            printf("%s", token->token_words);
-            #endif // DEBUG
-            /* New Array, create a new array node */
-            obj->value = calloc(1, sizeof(struct json_obj));
-            obj->value->value_type = V_ARRAY;
-            token = json_parse_array(token, obj->value, true, e_pkt);
-            break;
-      case LEFT_BUCKET:
-            /* Object */
-            /* New Object, create a new object node */
-            #ifdef DEBUG
-            printf("%s", token->token_words);
-            #endif // DEBUG
+      if (expect(reader, 'n') && expect(reader, 'u') && expect(reader, 'l') && expect(reader, 'l')) {
+            JSONObj *value = calloc(1, sizeof(JSONObj));
+            value->key_value = false;
+            value->data = calloc(4, sizeof(char));
+            strncpy(value->data, "null", 4);
+            return value;
+      }
+      unexpected(reader);
+      return NULL;
+}
+
+static JSONObj *json_parse_array(JSONReader *reader) {
+      JSONObj *head = (JSONObj *)calloc(1, sizeof(JSONObj));
+      head->value_type = false;
+      JSONObj *node = head;
+      uint32_t index = 0;
+      for (;;) {
+            JSONObj *key = (JSONObj *)calloc(1, sizeof(JSONObj));
+            key->prev_key = node;
+            node->next_key = key;
+            key->key_value = true;
+            key->data = json_utils_long2str(index);
+            JSONObj *value = NULL;
+            // expect string number boolean object array null
+            skip_space(reader);
+            if (expect(reader, '{')) {
+                  value = json_parse_object(reader);
+            } else if (expect(reader, '[')) {
+                  value = json_parse_array(reader);
+            } else if (match(reader, '+') == MATCH_SUCCESS || match(reader, '-') == MATCH_SUCCESS || match_digit(reader) == MATCH_SUCCESS) {
+                  value = json_parse_number(reader);
+            } else if (match(reader, 't') == MATCH_SUCCESS || match(reader, 'f') == MATCH_SUCCESS) {
+                  value = json_parse_boolean(reader);
+            } else if (match(reader, 'n') == MATCH_SUCCESS) {
+                  value = json_parse_null(reader);
+            } else if (expect(reader, '"')) {
+                  value = json_parse_string(reader);
+            } else {
+                  unexpected(reader);
+                  return (NULL);
+            }
+            if (!value) return (NULL);
+            value->key_value = false;
+            key->value = value;
+            skip_space(reader);
+            // expect , or }
+            if (match(reader, ',') == MATCH_SUCCESS) {
+                  expect(reader, ',');
+            } else if (match(reader, ']') == MATCH_SUCCESS) {
+                  expect(reader, ']');
+                  break;
+            } else {
+                  unexpected(reader);
+                  return (NULL);
+            }
+            node = key;
+            index++;
             
-            obj->value = calloc(1, sizeof(struct json_obj));
-            obj->value->value_type = V_OBJECT;
-            token = json_parse_object(token, obj->value, true, e_pkt);
-            break;
-      default:
-            e_pkt->row = token->row;
-            e_pkt->col = token->col;
-            e_pkt->error_occur = true;
-            sprintf(e_pkt->err_msg, "Unexpected token type: %s",
-                        token_type_strs[token->token_type]);
-            return (NULL);
       }
-      return (token);
+      return head;
+}
+
+static JSONObj* json_parse_object(JSONReader *reader) {
+      JSONObj *head = (JSONObj *)calloc(1, sizeof(JSONObj));
+      head->value_type = false;
+      JSONObj *node = head;
+      for (;;) {
+            // expect string
+            skip_space(reader);
+            if (!expect(reader, '"')) {
+                  return (NULL);
+            }
+            JSONObj *key = json_parse_string(reader);
+            if (!key) return (NULL);
+            key->prev_key = node;
+            node->next_key = key;
+            // expect :
+            skip_space(reader);
+            if (!expect(reader, ':')) {
+                  return (NULL);
+            }
+            
+            JSONObj *value = NULL;
+            // expect string number boolean object array null
+            skip_space(reader);
+            if (expect(reader, '{')) {
+                  value = json_parse_object(reader);
+            } else if (expect(reader, '[')) {
+                  value = json_parse_array(reader);
+            } else if (match(reader, '+') == MATCH_SUCCESS || match(reader, '-') == MATCH_SUCCESS || match_digit(reader) == MATCH_SUCCESS) {
+                  value = json_parse_number(reader);
+            } else if (match(reader, 't') == MATCH_SUCCESS || match(reader, 'f') == MATCH_SUCCESS) {
+                  value = json_parse_boolean(reader);
+            } else if (match(reader, 'n') == MATCH_SUCCESS) {
+                  value = json_parse_null(reader);
+            } else if (expect(reader, '"')) {
+                  value = json_parse_string(reader);
+            } else {
+                  // Unexpect
+                  return (NULL);
+            }
+            if (!value) return (NULL);
+            value->key_value = false;
+            key->value = value;
+            skip_space(reader);
+            // expect , or }
+            if (match(reader, ',') == MATCH_SUCCESS) {
+                  expect(reader, ',');
+            } else if (match(reader, '}') == MATCH_SUCCESS) {
+                  expect(reader, '}');
+                  break;
+            } else {
+                  // unexpect
+            }
+            node = key;
+            
+      }
+      return head;
 }
 
 static struct json_query_command* 
@@ -1030,19 +352,23 @@ json_query_command_free(struct json_query_command *commands)
       if (commands->command_words) free(commands->command_words);
       free(commands); 
 }
-struct json_obj* 
-from_json(char *json_content, int size)
-{
-      struct json_tracker *tracker = json_tracker_init(json_content, size);
-      struct json_token *token = json_lexer(json_content, size, tracker);
-      if (!token) return (NULL);
-      struct json_obj *obj = json_parser(token, tracker);
-      if (!obj) goto exit;
-      /* Free */
-      json_tracker_free(tracker);
-      exit:
-            json_token_free(token);
-            return (obj);
+
+static char json_next(JSONReader *reader) {
+      if (reader == NULL || reader->cursor == reader->length - 1) 
+            return 0;
+      return reader->json[reader->cursor++];
+}
+struct json_obj* from_json(const char *json, uint32_t size) {
+      JSONReader *reader = (JSONReader *)calloc(1, sizeof(JSONReader));
+      if (reader == NULL) {
+            return NULL;
+      }
+      reader->json   = json;
+      reader->length = size;
+      reader->cursor = -1;
+      struct json_obj *obj = json_parser(reader);
+      free(reader);
+      return (obj);
 }
 
 void 
