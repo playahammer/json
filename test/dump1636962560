@@ -1,6 +1,0 @@
-./JSONTestSuite/test_parsing/n_object_trailing_comment_slash_open.json
-./JSONTestSuite/test_parsing/n_number_hex_2_digits.json
-./JSONTestSuite/test_parsing/n_structure_object_with_comment.json
-./JSONTestSuite/test_parsing/n_number_+1.json
-./JSONTestSuite/test_parsing/n_object_trailing_comment.json
-./JSONTestSuite/test_parsing/n_number_hex_1_digit.json

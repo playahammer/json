@@ -22,9 +22,10 @@ int main(int argc, char **argv)
       char *json = calloc(len, sizeof(char));
       fread(json, 1, len, fp);
       fclose(fp);
+      printf("%s\n", json);
       struct json_obj *obj = from_json(json, len);
       if (obj) {
-            json_obj_free(obj);
+            // json_obj_free(obj);
             free(json);
             printf("Passed\n");
       }

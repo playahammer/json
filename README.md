@@ -3,7 +3,7 @@ This project is a very tiny JSON parser and generator for C.
 
 ## Value Types
 ### Number
-We support there different number types: ```positive infinity```, ```negative infinity``` and ```NaN```.
+We support three different number types: ```positive infinity```, ```negative infinity``` and ```NaN```.
 #### Positive infinity
 
 ## Comments (JSON5 Only)

@@ -72,6 +72,8 @@ typedef struct {
       const char *json;
       uint32_t length;
       uint32_t cursor;
+      uint32_t row;
+      uint32_t col;
 }JSONReader;
 
 /* Serialize */
@@ -84,19 +86,19 @@ static JSONObj *json_parser(JSONReader *reader);
 #define MATCH_SUCCESS 0
 #define MATCH_FAILED  1
 static int match(JSONReader *reader, const char word);
-#define match_digit(reader)   match(reader, '0') || match(reader, '1') || match(reader, '2') || match(reader, '3') || match(reader, '4') || \
-                              match(reader, '5') || match(reader, '6') || match(reader, '7') || match(reader, '8') || match(reader, '9')
-#define match_alpha(reader)   match(reader, 'a') || match(reader, 'b') || match(reader, 'c') || match(reader, 'd') || match(reader, 'e') || \
-                              match(reader, 'f') || match(reader, 'g') || match(reader, 'h') || match(reader, 'i') || match(reader, 'j') || \
-                              match(reader, 'k') || match(reader, 'l') || match(reader, 'm') || match(reader, 'n') || match(reader, 'o') || \
-                              match(reader, 'p') || match(reader, 'q') || match(reader, 'r') || match(reader, 's') || match(reader, 't') || \
-                              match(reader, 'u') || match(reader, 'v') || match(reader, 'w') || match(reader, 'x') || match(reader, 'y') || \
-                              match(reader, 'z') || match(reader, 'A') || match(reader, 'B') || match(reader, 'C') || match(reader, 'D') || \
-                              match(reader, 'E') || match(reader, 'F') || match(reader, 'G') || match(reader, 'H') || match(reader, 'I') || \
-                              match(reader, 'J') || match(reader, 'K') || match(reader, 'L') || match(reader, 'M') || match(reader, 'N') || \
-                              match(reader, 'O') || match(reader, 'P') || match(reader, 'Q') || match(reader, 'R') || match(reader, 'S') || \
-                              match(reader, 'T') || match(reader, 'U') || match(reader, 'V') || match(reader, 'W') || match(reader, 'X') || \
-                              match(reader, 'Y') || match(reader, 'Z')
+#define match_digit(reader)   (match(reader, '0') == MATCH_SUCCESS || match(reader, '1') == MATCH_SUCCESS || match(reader, '2') == MATCH_SUCCESS || match(reader, '3') == MATCH_SUCCESS || match(reader, '4') == MATCH_SUCCESS || \
+                              match(reader, '5') == MATCH_SUCCESS || match(reader, '6') == MATCH_SUCCESS || match(reader, '7') == MATCH_SUCCESS || match(reader, '8') == MATCH_SUCCESS || match(reader, '9') == MATCH_SUCCESS)
+#define match_alpha(reader)   (match(reader, 'a') == MATCH_SUCCESS || match(reader, 'b') == MATCH_SUCCESS || match(reader, 'c') == MATCH_SUCCESS || match(reader, 'd') == MATCH_SUCCESS || match(reader, 'e') == MATCH_SUCCESS || \
+                              match(reader, 'f') == MATCH_SUCCESS || match(reader, 'g') == MATCH_SUCCESS || match(reader, 'h') == MATCH_SUCCESS || match(reader, 'i') == MATCH_SUCCESS || match(reader, 'j') == MATCH_SUCCESS || \
+                              match(reader, 'k') == MATCH_SUCCESS || match(reader, 'l') == MATCH_SUCCESS || match(reader, 'm') == MATCH_SUCCESS || match(reader, 'n') == MATCH_SUCCESS || match(reader, 'o') == MATCH_SUCCESS || \
+                              match(reader, 'p') == MATCH_SUCCESS || match(reader, 'q') == MATCH_SUCCESS || match(reader, 'r') == MATCH_SUCCESS || match(reader, 's') == MATCH_SUCCESS || match(reader, 't') == MATCH_SUCCESS || \
+                              match(reader, 'u') == MATCH_SUCCESS || match(reader, 'v') == MATCH_SUCCESS || match(reader, 'w') == MATCH_SUCCESS || match(reader, 'x') == MATCH_SUCCESS || match(reader, 'y') == MATCH_SUCCESS || \
+                              match(reader, 'z') == MATCH_SUCCESS || match(reader, 'A') == MATCH_SUCCESS || match(reader, 'B') == MATCH_SUCCESS || match(reader, 'C') == MATCH_SUCCESS || match(reader, 'D') == MATCH_SUCCESS || \
+                              match(reader, 'E') == MATCH_SUCCESS || match(reader, 'F') == MATCH_SUCCESS || match(reader, 'G') == MATCH_SUCCESS || match(reader, 'H') == MATCH_SUCCESS || match(reader, 'I') == MATCH_SUCCESS || \
+                              match(reader, 'J') == MATCH_SUCCESS || match(reader, 'K') == MATCH_SUCCESS || match(reader, 'L') == MATCH_SUCCESS || match(reader, 'M') == MATCH_SUCCESS || match(reader, 'N') == MATCH_SUCCESS || \
+                              match(reader, 'O') == MATCH_SUCCESS || match(reader, 'P') == MATCH_SUCCESS || match(reader, 'Q') == MATCH_SUCCESS || match(reader, 'R') == MATCH_SUCCESS || match(reader, 'S') == MATCH_SUCCESS || \
+                              match(reader, 'T') == MATCH_SUCCESS || match(reader, 'U') == MATCH_SUCCESS || match(reader, 'V') == MATCH_SUCCESS || match(reader, 'W') == MATCH_SUCCESS || match(reader, 'X') == MATCH_SUCCESS || \
+                              match(reader, 'Y') == MATCH_SUCCESS || match(reader, 'Z'))
 static char expect(JSONReader *reader, const char word);
 static char expect_digit(JSONReader *reader);
 static char expect_alpha(JSONReader *reader);

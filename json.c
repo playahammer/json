@@ -7,9 +7,6 @@
 #include <stdarg.h>
 #include <ctype.h>
 
-#define FALSE_LEN strlen("false")
-#define TRUE_LEN strlen("true")
-
 static const char *bool_str[] = {
       "false",
       "true"
@@ -92,19 +89,21 @@ json_token_free(struct json_token *token)
 static char expect(JSONReader *reader, const char word) {
       if (match(reader, word) == MATCH_FAILED) 
             return 0;
-      return reader->json[reader->cursor++];
+      return reader->json[++reader->cursor];
 }
 
 static char expect_digit(JSONReader *reader) {
-      if (match_digit(reader) == MATCH_FAILED) 
+      if (!match_digit(reader)) {
+           
             return 0;
-      return reader->json[reader->cursor++];
+      }
+      return reader->json[++reader->cursor];
 }
 
 static char expect_alpha(JSONReader *reader) {
       if (match_alpha(reader) == MATCH_FAILED) 
             return 0;
-      return reader->json[reader->cursor++];
+      return reader->json[++reader->cursor];
 }
 static int match(JSONReader *reader, const char word) {
       if (!reader || reader->cursor + 1 == reader->length)
@@ -121,23 +120,39 @@ static void skip_space(JSONReader *reader) {
 static JSONObj* json_parser(JSONReader *reader) {
       #ifdef DEBUG
       printf("=> Parsing\n");
+      printf("%s\n", reader->json);
       #endif // DEBUG
       JSONObj *root = NULL;
       skip_space(reader);
       if (expect(reader, '{')) {
+            #ifdef DEBUG
+            printf("{");
+            #endif // DEBUG
             root = json_parse_object(reader);
       } else if (expect(reader, '[')) {
+            #ifdef DEBUG
+            printf("[");
+            #endif // DEBUG
             root = json_parse_array(reader);
-      } else if (match(reader, '+') || match(reader, '-') || match_digit(reader)) {
+      } else if (match(reader, '+') == MATCH_SUCCESS || match(reader, '-') == MATCH_SUCCESS || match_digit(reader)) {
             root = json_parse_number(reader);
-      } else if (match(reader, 't') || match(reader, 'f')) {
+      } else if (match(reader, 't') == MATCH_SUCCESS || match(reader, 'f') == MATCH_SUCCESS) {
             root = json_parse_boolean(reader); 
-      } else if (match(reader, 'n')) {
+      } else if (match(reader, 'n') == MATCH_SUCCESS) {
             root = json_parse_null(reader);
-      } else if (match(reader, '"')) {
+      } else if (expect(reader, '"')) {
+            #ifdef DEBUG
+            printf("\"");
+            #endif // DEBUG
             root = json_parse_string(reader);
       } else {
             unexpected(reader);
+      }
+
+      skip_space(reader);
+      if (reader->cursor + 1 != reader->length) {
+            fprintf(stdout, "JSON file ended but still has content\n");
+            return NULL;
       }
       #ifdef DEBUG
       printf("\n");
@@ -146,11 +161,66 @@ static JSONObj* json_parser(JSONReader *reader) {
 }
 
 static JSONObj *json_parse_string(JSONReader *reader) {
+      uint32_t begin = ++reader->cursor;
+      for (; reader->cursor < reader->length; reader->cursor++) {
+            /* Unescaped control char */
+            char c = reader->json[reader->cursor];
+            #ifdef DEBUG
+            printf("%c", c);
+            #endif // DEBUG
+            
+            if (c != 0x7f && iscntrl(c)) { 
+                  return NULL;
+            }
+            else if (c == '"' && reader->json[reader->cursor - 1] != '\\') {
+                  JSONObj *obj = calloc(1, sizeof(JSONObj));
+                  obj->data = calloc(reader->cursor - begin, sizeof(char));
+                  strncpy(obj->data, reader->json + begin, reader->cursor - begin);
+                  return obj;
+            }
+      }
       return NULL;
 }
 
 static JSONObj *json_parse_number(JSONReader *reader) {
-      return NULL;
+      uint32_t begin = reader->cursor + 1;
+      JSONObj *obj = NULL;
+      int c = 0;
+      /* Decimal number */
+      expect(reader, '-');
+      /* Integer part */
+      if (expect(reader, '0') && ++c && expect_digit(reader)) {
+            return NULL;
+      }
+      /* Number at least has one digit */
+      while (expect_digit(reader)) c++;
+      if (!c) return NULL;
+      /* Fractional part */
+      if (expect(reader,'.')) {
+            /* Fractional part must have one digit */
+            if (!expect_digit(reader)) {
+                  return NULL;
+            }
+            while (expect_digit(reader));
+      } 
+      /* Exponent part of scientific nation */
+      if (expect(reader, 'E') || expect(reader, 'e')) {
+            expect(reader, '+') || expect(reader, '-');
+            /* Must have one digital */
+            if (!expect_digit(reader)) {
+                  return NULL;
+            }
+            while (expect_digit(reader));
+      }
+
+      number_exit:
+            obj = calloc(1, sizeof(JSONObj));
+            obj->key_value = false;
+            obj->data = calloc(reader->cursor + 1 - begin, sizeof(char));
+            strncpy(obj->data, reader->json + begin, reader->cursor + 1 - begin);
+            printf("%s", obj->data);
+            return obj;
+      
 }
 
 static JSONObj *json_parse_boolean(JSONReader *reader) {
@@ -185,7 +255,7 @@ static JSONObj *json_parse_null(JSONReader *reader) {
 
 static JSONObj *json_parse_array(JSONReader *reader) {
       JSONObj *head = (JSONObj *)calloc(1, sizeof(JSONObj));
-      head->value_type = false;
+      head->key_value = true;
       JSONObj *node = head;
       uint32_t index = 0;
       for (;;) {
@@ -198,20 +268,33 @@ static JSONObj *json_parse_array(JSONReader *reader) {
             // expect string number boolean object array null
             skip_space(reader);
             if (expect(reader, '{')) {
+                  #ifdef DEBUG
+                  printf("{");
+                  #endif // DEBUG
                   value = json_parse_object(reader);
             } else if (expect(reader, '[')) {
+                  #ifdef DEBUG
+                  printf("[");
+                  #endif // DEBUG
                   value = json_parse_array(reader);
-            } else if (match(reader, '+') == MATCH_SUCCESS || match(reader, '-') == MATCH_SUCCESS || match_digit(reader) == MATCH_SUCCESS) {
+            } else if (match(reader, '+') == MATCH_SUCCESS || match(reader, '-') == MATCH_SUCCESS || match_digit(reader)) {
                   value = json_parse_number(reader);
             } else if (match(reader, 't') == MATCH_SUCCESS || match(reader, 'f') == MATCH_SUCCESS) {
                   value = json_parse_boolean(reader);
             } else if (match(reader, 'n') == MATCH_SUCCESS) {
                   value = json_parse_null(reader);
             } else if (expect(reader, '"')) {
+                  #ifdef DEBUG
+                  printf("\"");
+                  #endif // DEBUG
                   value = json_parse_string(reader);
+            } else if (index == 0 && expect(reader, ']')){
+                  #ifdef DEBUG
+                  printf("]");
+                  #endif // DEBUG
+                  break;
             } else {
                   unexpected(reader);
-                  return (NULL);
             }
             if (!value) return (NULL);
             value->key_value = false;
@@ -220,8 +303,14 @@ static JSONObj *json_parse_array(JSONReader *reader) {
             // expect , or }
             if (match(reader, ',') == MATCH_SUCCESS) {
                   expect(reader, ',');
+                  #ifdef DEBUG
+                  printf(",");
+                  #endif // DEBUG
             } else if (match(reader, ']') == MATCH_SUCCESS) {
                   expect(reader, ']');
+                  #ifdef DEBUG
+                  printf("]");
+                  #endif // DEBUG
                   break;
             } else {
                   unexpected(reader);
@@ -238,36 +327,63 @@ static JSONObj* json_parse_object(JSONReader *reader) {
       JSONObj *head = (JSONObj *)calloc(1, sizeof(JSONObj));
       head->value_type = false;
       JSONObj *node = head;
+      uint32_t c = 0;
       for (;;) {
             // expect string
             skip_space(reader);
+            // Empty object
+            if (c == 0 && expect(reader, '}')) {
+                  #ifdef DEBUG
+                  printf("}");
+                  #endif // DEBUG
+                  break;
+            } 
             if (!expect(reader, '"')) {
-                  return (NULL);
+                  return NULL;
             }
+            #ifdef DEBUG
+            printf("\"");
+            #endif // DEBUG
+           
             JSONObj *key = json_parse_string(reader);
             if (!key) return (NULL);
             key->prev_key = node;
+            key->key_value = true;
             node->next_key = key;
             // expect :
             skip_space(reader);
             if (!expect(reader, ':')) {
                   return (NULL);
             }
-            
+            #ifdef DEBUG
+            printf(":");
+            #endif // DEBUG
             JSONObj *value = NULL;
             // expect string number boolean object array null
             skip_space(reader);
             if (expect(reader, '{')) {
+                  #ifdef DEBUG
+                  printf("{");
+                  #endif // DEBUG
                   value = json_parse_object(reader);
             } else if (expect(reader, '[')) {
+                  #ifdef DEBUG
+                  printf("[");
+                  #endif // DEBUG
                   value = json_parse_array(reader);
-            } else if (match(reader, '+') == MATCH_SUCCESS || match(reader, '-') == MATCH_SUCCESS || match_digit(reader) == MATCH_SUCCESS) {
+            } else if (match(reader, '+') == MATCH_SUCCESS || match(reader, '-') == MATCH_SUCCESS || match_digit(reader) ) {
                   value = json_parse_number(reader);
             } else if (match(reader, 't') == MATCH_SUCCESS || match(reader, 'f') == MATCH_SUCCESS) {
                   value = json_parse_boolean(reader);
             } else if (match(reader, 'n') == MATCH_SUCCESS) {
+                  #ifdef DEBUG
+                  printf("n");
+                  #endif // DEBUG
                   value = json_parse_null(reader);
             } else if (expect(reader, '"')) {
+                  #ifdef DEBUG
+                  printf("\"");
+                  #endif // DEBUG
                   value = json_parse_string(reader);
             } else {
                   // Unexpect
@@ -280,14 +396,20 @@ static JSONObj* json_parse_object(JSONReader *reader) {
             // expect , or }
             if (match(reader, ',') == MATCH_SUCCESS) {
                   expect(reader, ',');
+                  #ifdef DEBUG
+                  printf(",");
+                  #endif // DEBUG
             } else if (match(reader, '}') == MATCH_SUCCESS) {
                   expect(reader, '}');
+                  #ifdef DEBUG
+                  printf("}");
+                  #endif // DEBUG
                   break;
             } else {
                   // unexpect
             }
             node = key;
-            
+            c++;
       }
       return head;
 }
