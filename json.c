@@ -78,8 +78,8 @@ static JSONObj *json_parser(JSONReader *reader) {
   }
 
   skip_space(reader);
-  if (reader->cursor + 1 != reader->length) {
-    fprintf(stdout, "JSON file ended but still has content\n");
+  if (root && reader->cursor + 1 != reader->length) {
+    printf("JSON file ended but still has content\n");
     return NULL;
   }
 #ifdef DEBUG
@@ -103,9 +103,15 @@ static JSONObj *json_parse_string(JSONReader *reader) {
       JSONObj *obj = calloc(1, sizeof(JSONObj));
       obj->data = calloc(reader->cursor - begin, sizeof(char));
       strncpy(obj->data, reader->json + begin, reader->cursor - begin);
+      if (!json_string_validator(obj->data, reader->cursor - begin)) {
+        free(obj->data);
+        free(obj);
+        return NULL;
+      }
       return obj;
     }
   }
+
   return NULL;
 }
 
@@ -347,6 +353,50 @@ static JSONObj *json_parse_object(JSONReader *reader) {
   return head;
 }
 
+static bool json_string_validator(char *s, uint32_t len) {
+  for (uint32_t i = 0; i < len; i++) {
+    char c = s[i];
+    if (c == '\\') {
+      c = s[++i];
+      if (c == 'x' || c == 'X') {
+        if (i + 2 > len - 1) {
+          printf("\\x must follow 2 hexadecimal number\n");
+          return false;
+        }
+        char v = 0;
+        for (int j = 0; j < 2; j++) {
+          if (!ishexnumber(c)) {
+            printf("Invalid hexadecimal number %c(%d)\n", c, c);
+            return false;
+          }
+          c = s[++i] - '0';
+          v += (c << (1 - j));
+        }
+        if (iscntrl(v)) {
+          printf("Control character is not allowed %c(%d)\n", v, v);
+          return false;
+        }
+      } else if (c == 'u') {
+        if (i + 4 > len - 1) {
+          printf("\\u must follow 4 hexadecimal number\n");
+          return false;
+        }
+        for (int j = 0; j < 4; j++) {
+          c = s[++i];
+          if (!ishexnumber(c)) {
+            printf("Unknown escaped word %c(%d)\n", c, c);
+            return false;
+          }
+        }
+      } else if (c != '"' && c != '\\' && c != '/' && c != 'b' && c != 'f' &&
+                 c != 'n' && c != 'r' && c != 't') {
+        printf("Unknown escaped word %c(%d)\n", c, c);
+        return false;
+      }
+    }
+  }
+  return true;
+}
 static struct json_query_command *json_query_command_parser(
     char *json_query_command) {
   if (!*json_query_command) {
@@ -924,7 +974,7 @@ int json_delete(char *command, struct json_obj *obj) {
 }
 
 int to_json(struct json_obj *root, char *json_content, uint32_t size) {
-  if (!json_content || size < MIN_JSON_LEN) return (-1);
+  if (!json_content) return (-1);
   bzero(json_content, size);
   return (json_build(root, json_content, size, false, -1));
 }

@@ -142,6 +142,7 @@ static JSONObj *json_parse_string(JSONReader *reader);
 static JSONObj *json_parse_number(JSONReader *reader);
 static JSONObj *json_parse_boolean(JSONReader *reader);
 static JSONObj *json_parse_null(JSONReader *reader);
+static bool json_string_validator(char *s, uint32_t len);
 /* Operations */
 /* Query */
 struct json_obj *json_query(char *command, struct json_obj *obj);
